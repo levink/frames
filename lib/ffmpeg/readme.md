@@ -28,3 +28,12 @@ cd C:/Projects/ffmpeg
 make -j 4
 make install
 ```
+
+# Using ffmpeg lib in CMakeLists.txt
+```
+add_subdirectory(<dir>/ffmpeg)
+target_link_libraries(<target> PRIVATE ffmpeg)
+file(GLOB FFMPEG_DLLS ${FFMPEG_DLL_PATH}/*.dll)
+file(COPY ${FFMPEG_DLLS} DESTINATION ${CMAKE_BINARY_DIR})
+```
+
