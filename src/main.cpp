@@ -13,19 +13,6 @@ struct FileInfo {
     void processFrame(AVFrame* frame);
 };
 
-struct OpenFileResult {
-    bool ok = false;
-    std::string error;
-    FileInfo fileInfo;
-
-    static OpenFileResult success(FileInfo info) {
-        return OpenFileResult{ true, "", info};
-    }
-    static OpenFileResult err(const char* msg) {
-        return OpenFileResult{ false, msg, {} };
-    }
-};
-
 bool FileInfo::openFile(const char* fileName) {
 
     formatContext = avformat_alloc_context();
@@ -119,8 +106,7 @@ void FileInfo::processFrame(AVFrame* frame) {
     auto height = frame->height;
     auto lineSize = frame->linesize[0];
 
-    std::vector<uint8_t> pixels(width * height * 4, 0);
-
+    std::vector<uint8_t> pixelsGray(width * height * 4, 0);
     uint8_t* lineBegin = frame->data[0];
     for (int y = 0; y < frame->height; y++) {
         for (int x = 0; x < frame->width; x++) {
@@ -132,24 +118,44 @@ void FileInfo::processFrame(AVFrame* frame) {
             auto bIndex = base + 2;
             auto aIndex = base + 3;
 
-            pixels[rIndex] = gray;
-            pixels[gIndex] = gray;
-            pixels[bIndex] = gray;
-            pixels[aIndex] = 255;
+            pixelsGray[rIndex] = gray;
+            pixelsGray[gIndex] = gray;
+            pixelsGray[bIndex] = gray;
+            pixelsGray[aIndex] = 255;
         }
 
         lineBegin += lineSize;
     }
 
-    unsigned err = lodepng::encode("./test.png", pixels, width, height, LodePNGColorType::LCT_RGBA);
-    if (err) {
-        std::cout << "lodepng::encode(): Error code=" << err << std::endl;
+    unsigned retPNG = lodepng::encode("./testGray.png", pixelsGray, width, height, LodePNGColorType::LCT_RGBA);
+    if (retPNG) {
+        std::cout << "lodepng::encode() on gray: Error code=" << retPNG << std::endl;
     }
 
-    //static uint8_t* video_dst_data[4] = { NULL };
-    //static int      video_dst_linesize[4];
-    //av_image_alloc()
-    //av_image_copy2()
+    SwsContext* swsContext = sws_getContext(
+        width, height, codecContext->pix_fmt,
+        width, height, AV_PIX_FMT_RGB0,
+        SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!swsContext) {
+        std::cout << "sws_getContext() return nullptr" << std::endl;
+        return;
+    }
+
+    int destLineSize[4] = { width * 4, 0, 0, 0 };           // *3 maybe?
+    uint8_t* pixelsRGBA = new uint8_t[width * height * 4];  // *3 maybe?
+    uint8_t* dest[4] = { pixelsRGBA, nullptr, nullptr, nullptr };
+    int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, dest, destLineSize);
+    if (ret < 0) {
+        std::cout << "sws_scale() return " << ret << std::endl;
+    }
+
+    sws_freeContext(swsContext);
+    swsContext = nullptr;
+
+    retPNG = lodepng::encode("./testRGB.png", pixelsRGBA, width, height, LodePNGColorType::LCT_RGBA);
+    if (retPNG) {
+        std::cout << "lodepng::encode() on rgb: Error code=" << retPNG << std::endl;
+    }
 }
 
 static void savePNG() {
@@ -188,10 +194,7 @@ int main() {
 		std::cout << "glfwInit - ok" << std::endl;
 	}*/
 
-   /* savePNG();
-    return 0;*/
-
-    //av_log_set_level(AV_LOG_FATAL);
+    av_log_set_level(AV_LOG_FATAL);
 
 	const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
    
@@ -201,18 +204,6 @@ int main() {
         std::cout << info.error << std::endl;
         return -1;
     }
-    
-    //FileReader reader;
-    //bool eof = false;
-    //while (!eof) { 
-    //    //ugly =). process EOF correctly =)
-    //    reader.readPacket(open.fileInfo);
-    //    if (reader.hasError()) {
-    //        std::cout << reader.err << std::endl;
-    //        return -1;
-    //    }
-    //}
-   
 
 	return 0;
 }
