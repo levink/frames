@@ -10,6 +10,7 @@ add_subdirectory(lib/glad)
 add_subdirectory(lib/ffmpeg)
 
 add_executable(app 
+	src/lodepng.cpp	
 	src/main.cpp
 )
 
