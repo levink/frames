@@ -36,18 +36,32 @@ namespace png {
     }
 }
 
+struct PacketUnref {
+    AVPacket* packet = nullptr;
+    ~PacketUnref() {
+        if (packet) {
+            av_packet_unref(packet);
+        }
+    }
+};
+
 struct FileInfo {
     AVFormatContext* formatContext = nullptr;
-    AVCodecContext* codecContext = nullptr;
-    SwsContext* swsContext = nullptr;
     int videoIndex = -1;
-    const AVCodec* codec = nullptr;
+    
+    AVCodecContext* codecContext = nullptr;
+    const AVCodec* codec;    
+
+    SwsContext* swsContext = nullptr;
+    uint8_t* pixelsRGBA = nullptr;
+    int pixelsLineSize = 0;
+    
     AVPacket* packet = nullptr;
-    AVFrame* frame = nullptr;
+    AVFrame* frame = nullptr;  
     
     std::string error;
     bool openFile(const char* fileName);
-    void processFrame(AVFrame* frame);
+    bool processFrame(AVFrame* frame);
 
     ~FileInfo() {
         if (formatContext) {
@@ -65,6 +79,10 @@ struct FileInfo {
         if (frame) {
             av_frame_free(&frame);
         }        
+
+        delete[] pixelsRGBA;
+        pixelsRGBA = nullptr;
+        pixelsLineSize = 0;
     }
 };
 
@@ -108,14 +126,18 @@ bool FileInfo::openFile(const char* fileName) {
         return false;
     }
 
+    auto width = codecContext->width;
+    auto height = codecContext->height;
     swsContext = sws_getContext(
-        codecContext->width, codecContext->height, codecContext->pix_fmt,
-        codecContext->width, codecContext->height, AV_PIX_FMT_RGB0,
+        width, height, codecContext->pix_fmt,
+        width, height, AV_PIX_FMT_RGB0,
         SWS_BILINEAR, nullptr, nullptr, nullptr);
     if (!swsContext) {
         error = "swsContext bad alloc";
         return false;
     }
+    pixelsRGBA = new uint8_t[width * height * 4];
+    pixelsLineSize = width * 4;
 
     ret = avcodec_open2(codecContext, codec, nullptr);
     if (ret < 0) {
@@ -130,12 +152,12 @@ bool FileInfo::openFile(const char* fileName) {
         return false;
     }
 
-    int frameSkip = 100;
-    int frameReads = 101;
-    while (av_read_frame(formatContext, packet) >= 0 && frameReads > 0) {
-        int response = avcodec_send_packet(codecContext, packet);
+    bool finished = false;
+    while (av_read_frame(formatContext, packet) >= 0 && !finished) {
+
+        PacketUnref packetUnref{ packet };
+        int response = avcodec_send_packet(codecContext, packetUnref.packet);
         if (packet->stream_index != videoIndex) {
-            av_packet_unref(packet);
             continue;
         }
 
@@ -146,67 +168,45 @@ bool FileInfo::openFile(const char* fileName) {
             }
             else if (response < 0) {
                 error = "Error on receive frame: " + std::to_string(response);
-                return false;
+                finished = true;
+                break;
             }
 
-            frameReads--;
-            if (frameSkip > 0) {
-                frameSkip--;
-            }
-            else {
-                processFrame(frame);
+            finished = processFrame(frame);
+            if (finished) {
+                break;
             }
         }
-        av_packet_unref(packet);
     }
 
-    return true;
+    bool ok = (error == "");
+    return ok;
 }
-void FileInfo::processFrame(AVFrame* frame) {
+
+int frameSkip = 100;
+bool FileInfo::processFrame(AVFrame* frame) {
+
+    if (frameSkip > 0) {
+        frameSkip--;
+        return false;
+    }
 
     const auto width = frame->width;
     const auto height = frame->height;
     const auto lineSize = frame->linesize[0];
 
-    int destLineSize[4] = { width * 4, 0, 0, 0 };           // *3 maybe?
-    uint8_t* pixelsRGBA = new uint8_t[width * height * 4];  // *3 maybe?
+    int destLineSize[4] = { pixelsLineSize, 0, 0, 0 };
     uint8_t* dest[4] = { pixelsRGBA, nullptr, nullptr, nullptr };
     int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, dest, destLineSize);
     if (ret < 0) {
-        std::cout << "sws_scale() return " << ret << std::endl;
+        std::cout << "processFrame: sws_scale() return " << ret << std::endl;
     }
 
     auto retPNG = lodepng::encode("./testRGB.png", pixelsRGBA, width, height, LodePNGColorType::LCT_RGBA);
     if (retPNG) {
         std::cout << "lodepng::encode() on rgb: Error code=" << retPNG << std::endl;
     }
-}
-
-static void savePNG() {
-
-    constexpr uint32_t SIZE = 32;
-    std::vector<uint8_t> pixels(SIZE * SIZE * 4, 0);
-
-    for (int y = 0; y < SIZE; y++) {
-        for (int x = 0; x < SIZE; x++) {
-
-            auto base  = (y * SIZE + x) * 4;
-            auto red   = base + 0;
-            auto green = base + 1;
-            auto blue  = base + 2;
-            auto alpha = base + 3;
-
-            pixels[red]   = 255;
-            pixels[green] = 255;
-            pixels[blue]  = 0;
-            pixels[alpha] = 255;
-        }
-    }
-
-    unsigned err = lodepng::encode("./test.png", pixels, SIZE, SIZE, LodePNGColorType::LCT_RGBA);
-    if (err) {
-        std::cout << "lodepng::encode(): Error code=" << err << std::endl;
-    }
+    return true;
 }
 
 int main() {
@@ -221,8 +221,8 @@ int main() {
     av_log_set_level(AV_LOG_FATAL);
    
     FileInfo info;
-    bool opened = info.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
-    if (!opened) {
+    bool ok = info.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
+    if (!ok) {
         std::cout << info.error << std::endl;
         return -1;
     }
