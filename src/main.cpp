@@ -1,7 +1,13 @@
-﻿#include <iostream>
+﻿#include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include "ffmpeg.h"
-#include "lodepng.h"
+#include <iostream>
+#include "image/lodepng.h"
+#include "video/ffmpeg.h"
+#include "ui/ui.h"
+#include "render.h"
+
+
+Render render;
 
 namespace png {
     static void saveGrayPng(const char* fileName, const AVFrame* frame) {
@@ -50,7 +56,7 @@ struct FileInfo {
     int videoIndex = -1;
     
     AVCodecContext* codecContext = nullptr;
-    const AVCodec* codec;    
+    const AVCodec* codec = nullptr;    
 
     SwsContext* swsContext = nullptr;
     uint8_t* pixelsRGBA = nullptr;
@@ -61,7 +67,13 @@ struct FileInfo {
     
     std::string error;
     bool openFile(const char* fileName);
+
+    int frameSkip = 100; //todo: for debug
     bool processFrame(AVFrame* frame);
+
+    FileInfo() {
+        av_log_set_level(AV_LOG_FATAL);
+    }
 
     ~FileInfo() {
         if (formatContext) {
@@ -183,7 +195,6 @@ bool FileInfo::openFile(const char* fileName) {
     return ok;
 }
 
-int frameSkip = 100;
 bool FileInfo::processFrame(AVFrame* frame) {
 
     if (frameSkip > 0) {
@@ -209,23 +220,116 @@ bool FileInfo::processFrame(AVFrame* frame) {
     return true;
 }
 
+static void reshape(GLFWwindow*, int w, int h) {
+    render.reshape(w, h);
+}
+static void keyCallback(GLFWwindow* window, int key, int scanCode, int action, int mods) {
+    using namespace ui::keyboard;
+    auto keyEvent = KeyEvent(key, action, mods);
+
+    if (keyEvent.is(ESC)) {
+        glfwSetWindowShouldClose(window, GL_TRUE);
+    }
+    else if (keyEvent.is(R)) {
+        std::cout << "Reload shaders" << std::endl;
+        render.reloadShaders();
+    }
+   /* else if (keyEvent.is(B)) {
+        std::cout << "Scene rebuild" << std::endl;
+        render.scene.rebuild();
+    }*/
+}
+/*void mouseCallback(ui::mouse::MouseEvent event) {
+   using namespace ui;
+    using namespace ui::mouse;
+
+    auto cursor = event.getCursor();
+    cursor.y = (float)render.camera.viewSize.y - cursor.y;
+    auto& scene = render.scene;
+
+    if (event.is(Action::PRESS, Button::LEFT)) scene.selectPoint(cursor);
+    else if (event.is(Action::PRESS, Button::RIGHT)) scene.addPoint(cursor);
+    else if (event.is(Action::MOVE, Button::LEFT))  scene.movePoint(cursor);
+    else if (event.is(Action::RELEASE, Button::LEFT)) scene.recover();
+} */
+static void mouseClick(GLFWwindow*, int button, int action, int mods) {
+  /*  auto event = ui::mouse::click(button, action, mods);
+    mouseCallback(event);*/
+}
+static void mouseMove(GLFWwindow*, double x, double y) {
+    /*auto mx = static_cast<int>(x);
+    auto my = static_cast<int>(y);
+    auto event = ui::mouse::move(mx, my);
+    mouseCallback(event);*/
+}
+
 int main() {
 
-	/*if (!glfwInit()) {
-		std::cout << "glfwInit - error. Exit." << std::endl;
-		return -1;
-	} else {
-		std::cout << "glfwInit - ok" << std::endl;
-	}*/
+    if (!glfwInit()) {
+        std::cout << "glfwInit error" << std::endl;
+        return -1;
+    }
+    
+    constexpr int sceneWidth = 800;
+    constexpr int sceneHeight = 600;
+    GLFWwindow* window = glfwCreateWindow(sceneWidth, sceneHeight, "Frames", nullptr, nullptr);
+    if (!window) {
+        std::cout << "glfwCreateWindow error" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
 
-    av_log_set_level(AV_LOG_FATAL);
-   
-    FileInfo info;
+    glfwWindowHint(GLFW_DEPTH_BITS, 16);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
+    glfwMakeContextCurrent(window);
+    if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
+        std::cout << "Failed to init glad" << std::endl;
+        return -1;
+    } else {
+        printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
+    }
+
+    glfwSetFramebufferSizeCallback(window, reshape);
+    glfwSetKeyCallback(window, keyCallback);
+    glfwSetMouseButtonCallback(window, mouseClick);
+    glfwSetCursorPosCallback(window, mouseMove);
+    glfwSwapInterval(1);
+    glfwSetTime(0.0);
+
+   /* FileInfo info;
     bool ok = info.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
     if (!ok) {
         std::cout << info.error << std::endl;
         return -1;
+    }*/
+
+
+    render.reshape(sceneWidth, sceneHeight);
+    render.loadResources();
+    render.initResources();
+    render.videoMesh.position = {
+        { 100, 100 },
+        { 500, 100 },
+        { 500, 300 },
+        { 100, 300 }
+    };
+    render.videoMesh.face = {
+        { 0, 1, 2 },
+        { 2, 3, 0 }
+    };
+
+    while (!glfwWindowShouldClose(window)) {
+        glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        render.draw();
+
+        glFlush();
+        glfwSwapBuffers(window);
+        glfwPollEvents();
     }
 
+    render.destroy();
+    glfwTerminate();
 	return 0;
 }

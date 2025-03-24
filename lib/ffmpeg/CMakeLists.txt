@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.28)
 
 project(ffmpeg)
 
-set(FFMPEG_DLL_PATH ${PROJECT_SOURCE_DIR}/shared PARENT_SCOPE)
-set(FFMPEG_LIB_PATH ${PROJECT_SOURCE_DIR}/interface)
+set(FFMPEG_DLL_PATH ${PROJECT_SOURCE_DIR}/shared/ PARENT_SCOPE)
+set(FFMPEG_LIB_PATH ${PROJECT_SOURCE_DIR}/interface/)
 
 add_library(ffmpeg INTERFACE)
 
