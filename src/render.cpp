@@ -1,8 +1,5 @@
 #include "render.h"
 
-void ShaderCache::load() {
-	video.load(shader_files::video);
-}
 
 void Shaders::create(const ShaderCache& cache) {
 	video.create(cache.video);
@@ -13,9 +10,8 @@ void Shaders::link(const Render& render) {
 void Shaders::destroy() {
 	video.destroy();
 }
-
 void Render::loadResources() {
-	shaderCache.load();
+	shaderCache.video.load(shader_path::video);
 }
 void Render::initResources() {
 	shaders.create(shaderCache);
@@ -24,8 +20,13 @@ void Render::initResources() {
 void Render::reshape(int width, int height) {
 	camera.reshape(width, height);
 }
+static void reloadShader(const char* path, ShaderSource& cache, Shader& shader) {
+	cache.load(path);
+	shader.destroy();
+	shader.create(cache);
+}
 void Render::reloadShaders() {
-	//todo: finish this shit
+	reloadShader(shader_path::video, shaderCache.video, shaders.video);
 }
 void Render::draw() {
 	shaders.video.enable();

@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace shader_files {
+namespace shader_path {
     static const char* video = "../../data/shaders/video.glsl";
 }
 

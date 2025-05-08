@@ -6,7 +6,6 @@ struct Render; //forward
 
 struct ShaderCache {
 	ShaderSource video;
-	void load();
 };
 
 struct Shaders {
@@ -20,7 +19,6 @@ struct Render {
 	Camera camera;
 	Shaders shaders;
 	ShaderCache shaderCache;
-
 	VideoMesh videoMesh;
 
 	void loadResources();
