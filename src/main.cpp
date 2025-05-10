@@ -5,6 +5,9 @@
 #include "video/ffmpeg.h"
 #include "ui/ui.h"
 #include "render.h"
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
 
 
 Render render;
@@ -264,7 +267,6 @@ static void mouseMove(GLFWwindow*, double x, double y) {
 }
 
 int main() {
-
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
         return -1;
@@ -285,16 +287,29 @@ int main() {
     if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
         std::cout << "Failed to init glad" << std::endl;
         return -1;
-    } else {
+    }
+    else {
         printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
     }
-
     glfwSetFramebufferSizeCallback(window, reshape);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetMouseButtonCallback(window, mouseClick);
     glfwSetCursorPosCallback(window, mouseMove);
     glfwSwapInterval(1);
     glfwSetTime(0.0);
+
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(window, true);             // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
+    ImGui_ImplOpenGL3_Init();
+
 
    /* FileInfo info;
     bool ok = info.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
@@ -319,15 +334,28 @@ int main() {
     };
 
     while (!glfwWindowShouldClose(window)) {
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        ImGui::ShowDemoWindow();
+
         glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-
         render.draw();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glFlush();
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
+    
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     render.destroy();
     glfwTerminate();
