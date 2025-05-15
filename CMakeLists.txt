@@ -12,7 +12,6 @@ add_subdirectory(lib/ffmpeg)
 add_subdirectory(lib/imgui)
 
 add_executable(app 
-
 	lib/imgui/backends/imgui_impl_glfw.cpp
     lib/imgui/backends/imgui_impl_opengl3.cpp
 
@@ -29,6 +28,7 @@ add_executable(app
 )
 
 target_precompile_headers(app PRIVATE src/video/ffmpeg.h)
+#set_target_properties(app PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup /SUBSYSTEM:WINDOWS")
 
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/include/ffmpeg/)
@@ -40,5 +40,5 @@ target_link_libraries(app PRIVATE glad glfw ffmpeg imgui)
 
 file(COPY ${FFMPEG_DLL_PATH} DESTINATION ${CMAKE_BINARY_DIR})
 
-# Put all resources in a correct folder in the Release mode
+# For RELEASE: Set correct paths for resources 
 # file(COPY ${PROJECT_SOURCE_DIR}/data/shaders/ DESTINATION ${CMAKE_BINARY_DIR}/data/shaders/)

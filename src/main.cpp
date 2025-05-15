@@ -2,14 +2,14 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include "image/lodepng.h"
-#include "video/ffmpeg.h"
+#include "video/video.h"
 #include "ui/ui.h"
 #include "render.h"
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-
+FileInfo file;
 Render render;
 
 namespace png {
@@ -45,202 +45,41 @@ namespace png {
     }
 }
 
-struct PacketUnref {
-    AVPacket* packet = nullptr;
-    ~PacketUnref() {
-        if (packet) {
-            av_packet_unref(packet);
-        }
-    }
-};
-
-struct FileInfo {
-    AVFormatContext* formatContext = nullptr;
-    int videoIndex = -1;
-    
-    AVCodecContext* codecContext = nullptr;
-    const AVCodec* codec = nullptr;    
-
-    SwsContext* swsContext = nullptr;
-    uint8_t* pixelsRGBA = nullptr;
-    int pixelsLineSize = 0;
-    
-    AVPacket* packet = nullptr;
-    AVFrame* frame = nullptr;  
-    
-    std::string error;
-    bool openFile(const char* fileName);
-
-    int frameSkip = 100; //todo: for debug
-    bool processFrame(AVFrame* frame);
-
-    FileInfo() {
-        av_log_set_level(AV_LOG_FATAL);
-    }
-
-    ~FileInfo() {
-        if (formatContext) {
-            avformat_free_context(formatContext);
-        }
-        if (codecContext) {
-            avcodec_free_context(&codecContext);
-        }
-        if (swsContext) {
-            sws_freeContext(swsContext);
-        }
-        if (packet) {
-            av_packet_free(&packet);
-        }
-        if (frame) {
-            av_frame_free(&frame);
-        }        
-
-        delete[] pixelsRGBA;
-        pixelsRGBA = nullptr;
-        pixelsLineSize = 0;
-    }
-};
-
-bool FileInfo::openFile(const char* fileName) {
-
-    formatContext = avformat_alloc_context();
-    if (!formatContext) {
-        error = "formatContext bad alloc";
-        return false;
-    }
-
-    int ret = avformat_open_input(&formatContext, fileName, nullptr, nullptr);
-    if (ret < 0) {
-        error = "Cannot open input file";
-        return false;
-    }
-
-    ret = avformat_find_stream_info(formatContext, nullptr);
-    if (ret < 0) {
-        error = "Stream info not found";
-        return false;
-    }
-
-    ret = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
-    if (ret < 0) {
-        error = "Video stream not found";
-        return false;
-    } 
-    videoIndex = ret;
-
-    codecContext = avcodec_alloc_context3(codec);
-    if (!codecContext) {
-        error = "codecContext bad alloc";
-        return false;
-    }
-
-    const auto& stream = formatContext->streams[videoIndex];
-    ret = avcodec_parameters_to_context(codecContext, stream->codecpar);
-    if (ret < 0) {
-        error = "Bad copy params from stream to codec context";
-        return false;
-    }
-
-    auto width = codecContext->width;
-    auto height = codecContext->height;
-    swsContext = sws_getContext(
-        width, height, codecContext->pix_fmt,
-        width, height, AV_PIX_FMT_RGB0,
-        SWS_BILINEAR, nullptr, nullptr, nullptr);
-    if (!swsContext) {
-        error = "swsContext bad alloc";
-        return false;
-    }
-    pixelsRGBA = new uint8_t[width * height * 4];
-    pixelsLineSize = width * 4;
-
-    ret = avcodec_open2(codecContext, codec, nullptr);
-    if (ret < 0) {
-        error = "Cannot open video decoder";
-        return false;
-    }
-
-    packet = av_packet_alloc();
-    frame = av_frame_alloc();
-    if (!packet || !frame) {
-        error = "Packet or frame bad alloc";
-        return false;
-    }
-
-    bool finished = false;
-    while (av_read_frame(formatContext, packet) >= 0 && !finished) {
-
-        PacketUnref packetUnref{ packet };
-        int response = avcodec_send_packet(codecContext, packetUnref.packet);
-        if (packet->stream_index != videoIndex) {
-            continue;
-        }
-
-        while (response >= 0) {
-            response = avcodec_receive_frame(codecContext, frame);
-            if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
-                break;
-            }
-            else if (response < 0) {
-                error = "Error on receive frame: " + std::to_string(response);
-                finished = true;
-                break;
-            }
-
-            finished = processFrame(frame);
-            if (finished) {
-                break;
-            }
-        }
-    }
-
-    bool ok = (error == "");
-    return ok;
-}
-
-bool FileInfo::processFrame(AVFrame* frame) {
-
-    if (frameSkip > 0) {
-        frameSkip--;
-        return false;
-    }
-
-    const auto width = frame->width;
-    const auto height = frame->height;
-    const auto lineSize = frame->linesize[0];
-
-    int destLineSize[4] = { pixelsLineSize, 0, 0, 0 };
-    uint8_t* dest[4] = { pixelsRGBA, nullptr, nullptr, nullptr };
-    int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, dest, destLineSize);
-    if (ret < 0) {
-        std::cout << "processFrame: sws_scale() return " << ret << std::endl;
-    }
-
-    auto retPNG = lodepng::encode("./testRGB.png", pixelsRGBA, width, height, LodePNGColorType::LCT_RGBA);
-    if (retPNG) {
-        std::cout << "lodepng::encode() on rgb: Error code=" << retPNG << std::endl;
-    }
-    return true;
-}
-
 static void reshape(GLFWwindow*, int w, int h) {
     render.reshape(w, h);
 }
-static void keyCallback(GLFWwindow* window, int key, int scanCode, int action, int mods) {
+static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
-    auto keyEvent = KeyEvent(key, action, mods);
+    auto key = KeyEvent(keyCode, action, mods);
 
-    if (keyEvent.is(ESC)) {
+    if (key.is(ESC)) {
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
-    else if (keyEvent.is(R)) {
+    else if (key.is(R)) {
         std::cout << "Reload shaders" << std::endl;
         render.reloadShaders();
     }
-   /* else if (keyEvent.is(B)) {
-        std::cout << "Scene rebuild" << std::endl;
-        render.scene.rebuild();
-    }*/
+    else if (key.is(PERIOD)) {
+        file.nextFrame();
+
+        auto frameWidth = file.frame->width;
+        auto frameHeight = file.frame->height;
+        auto frameData = file.pixelsRGBA;
+        auto textureId = render.shaders.video.videoTextureId;
+
+        glBindTexture(GL_TEXTURE_2D, textureId);
+        glTexImage2D(GL_TEXTURE_2D, // Target
+            0,						// Mip-level
+            GL_RGBA,			    // Формат текстуры
+            frameWidth,             // Ширина текстуры
+            frameHeight,		    // Высота текстуры
+            0,						// Ширина границы
+            GL_RGBA,			    // Формат исходных данных
+            GL_UNSIGNED_BYTE,		// Тип исходных данных
+            frameData);             // Указатель на исходные данные 
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+    }
 }
 /*void mouseCallback(ui::mouse::MouseEvent event) {
    using namespace ui;
@@ -302,31 +141,68 @@ int main() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
-
-    // Setup Platform/Renderer backends
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;   // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;    // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;       // IF using Docking Branch
     ImGui_ImplGlfw_InitForOpenGL(window, true);             // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
-
-   /* FileInfo info;
-    bool ok = info.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
+    bool ok = file.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
     if (!ok) {
-        std::cout << info.error << std::endl;
+        std::cout << file.error << std::endl;
         return -1;
-    }*/
+    } else {
+        std::cout << "File loaded" << std::endl;
+    }
 
+    {
+        /*std::vector<uint8_t> pixels;
+        unsigned width = 0;
+        unsigned height = 0;
+        auto err = lodepng::decode(pixels, width, height, "../../data/img/cat.png", LodePNGColorType::LCT_RGBA);*/
+
+        GLuint videoTextureId = 0;
+        auto frameWidth = file.frame->width;
+        auto frameHeight = file.frame->height;
+        auto frameData = file.pixelsRGBA;
+
+        glGenTextures(1, &videoTextureId);
+        glBindTexture(GL_TEXTURE_2D, videoTextureId);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        
+        glTexImage2D(GL_TEXTURE_2D, // Target
+            0,						// Mip-level
+            GL_RGBA,			    // Формат текстуры
+            frameWidth,             // Ширина текстуры
+            frameHeight,		    // Высота текстуры
+            0,						// Ширина границы
+            GL_RGBA,			    // Формат исходных данных
+            GL_UNSIGNED_BYTE,		// Тип исходных данных
+            frameData);             // Указатель на исходные данные 
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+        render.shaders.video.videoTextureId = videoTextureId;
+    }
+    
 
     render.reshape(sceneWidth, sceneHeight);
     render.loadResources();
     render.initResources();
     render.videoMesh.position = {
-        { 100, 100 },
-        { 500, 100 },
-        { 500, 300 },
-        { 100, 300 }
+        { 0,   0   },
+        { 500, 0   },
+        { 500, 500 },
+        { 0,   500 }
+    };
+    render.videoMesh.texture = {
+        {0, 1},
+        {1, 1},
+        {1, 0},
+        {0, 0}
     };
     render.videoMesh.face = {
         { 0, 1, 2 },
@@ -335,17 +211,38 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
 
-        ImGui_ImplOpenGL3_NewFrame();
+      /*  ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        ImGui::ShowDemoWindow();
+        ImGui::NewFrame();*/
+
+        const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
+        const auto& workPos = main_viewport->WorkPos;
+        const auto& workSize = main_viewport->WorkSize;
+
+        const auto& style = ImGui::GetStyle();
+        auto sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
+
+        /*ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);*/
+        //ImGui::SetNextWindowPos(ImVec2(workPos.x, workSize.y - sliderHeight), ImGuiCond_Once);
+        //ImGui::SetNextWindowSize(ImVec2(workSize.x, 0), ImGuiCond_Once);
+        //if (ImGui::Begin("SliderWindow", nullptr, ImGuiWindowFlags_NoDecoration)) {
+        //    static float progress = 0.1f;
+        //    ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
+
+        //    ImGui::PushItemWidth(-FLT_MIN);
+        //    ImGui::SliderFloat("##slider", &progress, 0.0f, 1.0f, "%.3f", flags);
+        //    ImGui::PopItemWidth();
+        //}        
+        //ImGui::End();
+
+        //ImGui::ShowDemoWindow();
 
         glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         render.draw();
 
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+      /*  ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());*/
 
         glFlush();
         glfwSwapBuffers(window);

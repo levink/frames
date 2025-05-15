@@ -8,6 +8,7 @@ class VideoShader : public Shader {
         const Camera* camera = nullptr;
     } context;
 public:
+    GLuint videoTextureId = 0;
     VideoShader();
     void link(const Camera* camera);
     void enable() const override;

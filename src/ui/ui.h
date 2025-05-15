@@ -21,6 +21,8 @@ namespace ui {
             LEFT_SHIFT = GLFW_KEY_LEFT_SHIFT,
             LEFT_CONTROL = GLFW_KEY_LEFT_CONTROL,
             LEFT_ALT = GLFW_KEY_LEFT_ALT,
+            COMMA = GLFW_KEY_COMMA,
+            PERIOD = GLFW_KEY_PERIOD,
 
             W = GLFW_KEY_W,
             S = GLFW_KEY_S,
