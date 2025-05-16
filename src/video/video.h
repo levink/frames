@@ -14,34 +14,35 @@ struct PacketHolder {
 enum class ErrorCode {
     Ok = 0,
     FileBadOpen = 1,
-    StreamNotFound = 2,
+    StreamInfoNotFound = 2,
     VideoStreamNotFound = 3,
     CodecContextBadAlloc = 4,
     CodecContextBadCopy = 5,
     CodecContextBadInit = 6,
     SwsContextBadAlloc  = 7,
-    
     PacketBadAlloc = 8,
     FrameBadAlloc  = 9,
-
+    ReadBadSent    = 10,
+    ReadBadReceive = 11,
+    
+    
     Unknown
 };
 
 struct FileInfo {
 
     AVFormatContext* formatContext = nullptr;
-    AVCodecContext* codecContext = nullptr;
-    const AVCodec* decoder = nullptr;
-    int videoIndex = -1;
-
+    AVCodecContext* decoderContext = nullptr;
     SwsContext* swsContext = nullptr;
-    uint8_t* pixelsRGBA = nullptr;
-    int pixelsLineSize = 0;
-
+    const AVCodec* decoder = nullptr;
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
+    uint8_t* pixelsRGB = nullptr;
+    int videoIndex = -1;
 
-    ErrorCode openFile(const char* fileName);
+    ErrorCode open(const char* fileName);
+    ErrorCode read();
+
     void processFrame(AVFrame* frame);
     void nextFrame();
 
@@ -53,8 +54,8 @@ struct FileInfo {
         if (formatContext) {
             avformat_free_context(formatContext);
         }
-        if (codecContext) {
-            avcodec_free_context(&codecContext);
+        if (decoderContext) {
+            avcodec_free_context(&decoderContext);
         }
         if (swsContext) {
             sws_freeContext(swsContext);
@@ -66,20 +67,18 @@ struct FileInfo {
             av_frame_free(&frame);
         }
 
-        delete[] pixelsRGBA;
-        pixelsRGBA = nullptr;
-        pixelsLineSize = 0;
+        delete[] pixelsRGB;
     }
 };
 
-ErrorCode FileInfo::openFile(const char* fileName) {
+ErrorCode FileInfo::open(const char* fileName) {
 
     if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
         return ErrorCode::FileBadOpen;
     }
 
     if (avformat_find_stream_info(formatContext, nullptr) < 0) {
-        return ErrorCode::StreamNotFound;
+        return ErrorCode::StreamInfoNotFound;
     }
 
     videoIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
@@ -87,37 +86,19 @@ ErrorCode FileInfo::openFile(const char* fileName) {
         return ErrorCode::VideoStreamNotFound;
     }
 
-    codecContext = avcodec_alloc_context3(decoder);
-    if (codecContext == nullptr) {
+    decoderContext = avcodec_alloc_context3(decoder);
+    if (decoderContext == nullptr) {
         return ErrorCode::CodecContextBadAlloc;
     }
 
     const auto& videoStream = formatContext->streams[videoIndex];
-    if (avcodec_parameters_to_context(codecContext, videoStream->codecpar) < 0) {
+    if (avcodec_parameters_to_context(decoderContext, videoStream->codecpar) < 0) {
         return ErrorCode::CodecContextBadCopy;
     }
 
-    if (avcodec_open2(codecContext, decoder, nullptr) < 0) {
+    if (avcodec_open2(decoderContext, decoder, nullptr) < 0) {
         return ErrorCode::CodecContextBadInit;
     }
-
-    {
-        //why here?
-        auto width = codecContext->width;
-        auto height = codecContext->height;
-        swsContext = sws_getContext(
-            width, height, codecContext->pix_fmt,
-            width, height, AV_PIX_FMT_RGB0,
-            SwsFlags::SWS_BILINEAR,  // or SWS_FAST_BILINEAR?
-            nullptr, nullptr, nullptr);
-        if (!swsContext) {
-            return ErrorCode::SwsContextBadAlloc;
-        }
-
-        pixelsRGBA = new uint8_t[width * height * 4];
-        pixelsLineSize = width * 4;
-    }
-
 
     packet = av_packet_alloc();
     if (packet == nullptr) {
@@ -125,61 +106,67 @@ ErrorCode FileInfo::openFile(const char* fileName) {
     }
 
     frame = av_frame_alloc();
-    if (!frame) {
+    if (frame == nullptr) {
         return ErrorCode::FrameBadAlloc;
     }
 
-    int frameSkip = 100;
-    bool finished = false;
-    auto errCode = ErrorCode::Ok;
-    while (av_read_frame(formatContext, packet) >= 0 && !finished) {
+    const auto& width = decoderContext->width;
+    const auto& height = decoderContext->height;
+    pixelsRGB = new uint8_t[width * height * 3];
+    swsContext = sws_getContext(
+        width, height, decoderContext->pix_fmt,
+        width, height, AV_PIX_FMT_RGB24,
+        SwsFlags::SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (swsContext == nullptr) {
+        return ErrorCode::SwsContextBadAlloc;
+    }
 
-        PacketHolder packetHolder{ packet };
-        int response = avcodec_send_packet(codecContext, packetHolder.data);
+    return ErrorCode::Ok;
+}
+
+ErrorCode FileInfo::read() {
+
+    bool processed = false;
+    while (av_read_frame(formatContext, packet) >= 0 && !processed) {
         if (packet->stream_index != videoIndex) {
             continue;
         }
 
-        while (response >= 0) {
-            response = avcodec_receive_frame(codecContext, frame);
-            if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
-                break;
-            }
-            else if (response < 0) {
-                errCode = ErrorCode::Unknown; 
-                //error = "Error on receive frame: " + std::to_string(response);
-                finished = true;
-                break;
-            }
-
-            if (frameSkip > 0) {
-                frameSkip--;
-                continue;
-            }
-
-            processFrame(frame);
-            finished = true;
-            break;
+        // Send packet to decoder
+        int send = avcodec_send_packet(decoderContext, packet);
+        if (send != 0) {
+            av_packet_unref(packet);
+            return ErrorCode::ReadBadSent;
         }
+
+        // Receive frame from decoder
+        int recv = avcodec_receive_frame(decoderContext, frame);
+        while (recv == 0) {
+            processFrame(frame);
+            processed = true;
+            recv = avcodec_receive_frame(decoderContext, frame);
+        }
+        av_packet_unref(packet);
+
+        if (recv != AVERROR(EAGAIN)) {
+            return ErrorCode::ReadBadReceive;
+        } 
     }
 
-    return errCode;
+    return ErrorCode::Ok;
 }
 
+
 void FileInfo::processFrame(AVFrame* frame) {
-
-    const auto width = frame->width;
-    const auto height = frame->height;
-    const auto lineSize = frame->linesize[0];
-
-    int destLineSize[4] = { pixelsLineSize, 0, 0, 0 };
-    uint8_t* dest[4] = { pixelsRGBA, nullptr, nullptr, nullptr };
-    int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, dest, destLineSize);
+    uint8_t* destFrame[4] = { pixelsRGB, nullptr, nullptr, nullptr };
+    int destLineSize[4] = { frame->width * 3, 0, 0, 0 };
+    
+    int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
     if (ret < 0) {
         std::cout << "processFrame: sws_scale() return " << ret << std::endl;
     }
 
-  /*  auto retPNG = lodepng::encode("./testRGB.png", pixelsRGBA, width, height, LodePNGColorType::LCT_RGBA);
+   /* auto retPNG = lodepng::encode("./testRGB.png", pixelsRGB, frame->width, frame->height, LodePNGColorType::LCT_RGB);
     if (retPNG) {
         std::cout << "lodepng::encode() on rgb: Error code=" << retPNG << std::endl;
     }*/

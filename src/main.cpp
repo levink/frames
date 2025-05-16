@@ -62,23 +62,22 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(PERIOD)) {
         file.nextFrame();
 
-        auto frameWidth = file.frame->width;
-        auto frameHeight = file.frame->height;
-        auto frameData = file.pixelsRGBA;
-        auto textureId = render.shaders.video.videoTextureId;
+        const auto& width = file.decoderContext->width;
+        const auto& height = file.decoderContext->height;
+        const auto& pixelsRGB = file.pixelsRGB;
+        const auto& textureId = render.shaders.video.videoTextureId;
 
         glBindTexture(GL_TEXTURE_2D, textureId);
         glTexImage2D(GL_TEXTURE_2D, // Target
             0,						// Mip-level
             GL_RGBA,			    // Формат текстуры
-            frameWidth,             // Ширина текстуры
-            frameHeight,		    // Высота текстуры
+            width,                  // Ширина текстуры
+            height,		            // Высота текстуры
             0,						// Ширина границы
-            GL_RGBA,			    // Формат исходных данных
+            GL_RGB,			        // Формат исходных данных
             GL_UNSIGNED_BYTE,		// Тип исходных данных
-            frameData);             // Указатель на исходные данные 
+            pixelsRGB);             // Указатель на исходные данные 
         glBindTexture(GL_TEXTURE_2D, 0);
-
     }
 }
 /*void mouseCallback(ui::mouse::MouseEvent event) {
@@ -147,13 +146,20 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);             // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
-    auto errCode = file.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
-    if (errCode == ErrorCode::Ok) {
-        std::cout << "File loaded" << std::endl;
-    } else {
-        std::cout << static_cast<int>(errCode) << std::endl;
+    auto errCode = file.open("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
+    if (errCode != ErrorCode::Ok) {
+        std::cout << "File open - error: " << static_cast<int>(errCode) << std::endl;
         return -1;
     }
+    std::cout << "File open - ok" << std::endl;
+    
+    errCode = file.read();
+    if (errCode != ErrorCode::Ok) {
+        std::cout << "File read - error: " << static_cast<int>(errCode) << std::endl;
+        return -1;
+    }
+    std::cout << "File read - ok" << std::endl;
+
 
     {
         /*std::vector<uint8_t> pixels;
@@ -162,9 +168,9 @@ int main() {
         auto err = lodepng::decode(pixels, width, height, "../../data/img/cat.png", LodePNGColorType::LCT_RGBA);*/
 
         GLuint videoTextureId = 0;
-        auto frameWidth = file.frame->width;
-        auto frameHeight = file.frame->height;
-        auto frameData = file.pixelsRGBA;
+        const auto& width = file.decoderContext->width;
+        const auto& height = file.decoderContext->height;
+        const auto& pixelsRGB = file.pixelsRGB;
 
         glGenTextures(1, &videoTextureId);
         glBindTexture(GL_TEXTURE_2D, videoTextureId);
@@ -174,15 +180,18 @@ int main() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         
+        auto err = glGetError();
         glTexImage2D(GL_TEXTURE_2D, // Target
             0,						// Mip-level
             GL_RGBA,			    // Формат текстуры
-            frameWidth,             // Ширина текстуры
-            frameHeight,		    // Высота текстуры
+            width,                  // Ширина текстуры
+            height,		            // Высота текстуры
             0,						// Ширина границы
-            GL_RGBA,			    // Формат исходных данных
+            GL_RGB,			        // Формат исходных данных
             GL_UNSIGNED_BYTE,		// Тип исходных данных
-            frameData);             // Указатель на исходные данные 
+            pixelsRGB);             // Указатель на исходные данные 
+
+        err = glGetError();
 
         glBindTexture(GL_TEXTURE_2D, 0);
         render.shaders.video.videoTextureId = videoTextureId;
