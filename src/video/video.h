@@ -2,34 +2,24 @@
 
 #include "ffmpeg.h"
 
-struct PacketHolder {
-    AVPacket* data = nullptr;
-    ~PacketHolder() {
-        if (data) {
-            av_packet_unref(data);
-        }
-    }
-};
-
 enum class ErrorCode {
-    Ok = 0,
-    FileBadOpen = 1,
-    StreamInfoNotFound = 2,
-    VideoStreamNotFound = 3,
+    Ok                   = 0,
+    FileBadOpen          = 1,
+    StreamInfoNotFound   = 2,
+    VideoStreamNotFound  = 3,
     CodecContextBadAlloc = 4,
-    CodecContextBadCopy = 5,
-    CodecContextBadInit = 6,
-    SwsContextBadAlloc  = 7,
-    PacketBadAlloc = 8,
-    FrameBadAlloc  = 9,
-    ReadBadSent    = 10,
-    ReadBadReceive = 11,
-    
+    CodecContextBadCopy  = 5,
+    CodecContextBadInit  = 6,
+    SwsContextBadAlloc   = 7,
+    PacketBadAlloc       = 8,
+    FrameBadAlloc        = 9,
+    ReadBadSent          = 10,
+    ReadBadReceive       = 11,
     
     Unknown
 };
 
-struct FileInfo {
+struct FileReader {
 
     AVFormatContext* formatContext = nullptr;
     AVCodecContext* decoderContext = nullptr;
@@ -39,20 +29,18 @@ struct FileInfo {
     AVFrame* frame = nullptr;
     uint8_t* pixelsRGB = nullptr;
     int videoIndex = -1;
+    bool hasWork = false;
 
     ErrorCode open(const char* fileName);
     ErrorCode read();
 
-    void processFrame(AVFrame* frame);
-    void nextFrame();
-
-    FileInfo() {
+    FileReader() {
         av_log_set_level(AV_LOG_FATAL);
     }
 
-    ~FileInfo() {
+    ~FileReader() {
         if (formatContext) {
-            avformat_free_context(formatContext);
+            avformat_close_input(&formatContext);
         }
         if (decoderContext) {
             avcodec_free_context(&decoderContext);
@@ -69,9 +57,12 @@ struct FileInfo {
 
         delete[] pixelsRGB;
     }
+
+private:
+    void processFrame(const AVFrame* frame) const;
 };
 
-ErrorCode FileInfo::open(const char* fileName) {
+ErrorCode FileReader::open(const char* fileName) {
 
     if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
         return ErrorCode::FileBadOpen;
@@ -124,10 +115,25 @@ ErrorCode FileInfo::open(const char* fileName) {
     return ErrorCode::Ok;
 }
 
-ErrorCode FileInfo::read() {
+ErrorCode FileReader::read() {
 
-    bool processed = false;
-    while (av_read_frame(formatContext, packet) >= 0 && !processed) {
+    // continue work from previous call
+    if (hasWork) {
+        int recv = avcodec_receive_frame(decoderContext, frame);
+        if (recv == 0 ) {
+            processFrame(frame);
+            return ErrorCode::Ok;
+        }
+
+        hasWork = false;
+        av_packet_unref(packet);
+
+        if (recv != AVERROR(EAGAIN)) {
+            return ErrorCode::ReadBadReceive;
+        }
+    }
+    
+    while (av_read_frame(formatContext, packet) >= 0) {
         if (packet->stream_index != videoIndex) {
             continue;
         }
@@ -141,10 +147,10 @@ ErrorCode FileInfo::read() {
 
         // Receive frame from decoder
         int recv = avcodec_receive_frame(decoderContext, frame);
-        while (recv == 0) {
+        if (recv == 0) {
             processFrame(frame);
-            processed = true;
-            recv = avcodec_receive_frame(decoderContext, frame);
+            hasWork = true;
+            return ErrorCode::Ok;
         }
         av_packet_unref(packet);
 
@@ -156,8 +162,7 @@ ErrorCode FileInfo::read() {
     return ErrorCode::Ok;
 }
 
-
-void FileInfo::processFrame(AVFrame* frame) {
+void FileReader::processFrame(const AVFrame* frame) const {
     uint8_t* destFrame[4] = { pixelsRGB, nullptr, nullptr, nullptr };
     int destLineSize[4] = { frame->width * 3, 0, 0, 0 };
     
@@ -170,8 +175,4 @@ void FileInfo::processFrame(AVFrame* frame) {
     if (retPNG) {
         std::cout << "lodepng::encode() on rgb: Error code=" << retPNG << std::endl;
     }*/
-}
-
-void FileInfo::nextFrame() {
-
 }

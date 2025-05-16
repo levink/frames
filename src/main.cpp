@@ -9,7 +9,7 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-FileInfo file;
+FileReader file;
 Render render;
 
 namespace png {
@@ -60,23 +60,22 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(PERIOD)) {
-        file.nextFrame();
+        file.read();
 
         const auto& width = file.decoderContext->width;
         const auto& height = file.decoderContext->height;
         const auto& pixelsRGB = file.pixelsRGB;
         const auto& textureId = render.shaders.video.videoTextureId;
-
         glBindTexture(GL_TEXTURE_2D, textureId);
         glTexImage2D(GL_TEXTURE_2D, // Target
             0,						// Mip-level
-            GL_RGBA,			    // Формат текстуры
-            width,                  // Ширина текстуры
-            height,		            // Высота текстуры
-            0,						// Ширина границы
-            GL_RGB,			        // Формат исходных данных
-            GL_UNSIGNED_BYTE,		// Тип исходных данных
-            pixelsRGB);             // Указатель на исходные данные 
+            GL_RGBA,			    // Texture format
+            width,                  // Texture width
+            height,		            // Texture height
+            0,						// Border width
+            GL_RGB,			        // Source format
+            GL_UNSIGNED_BYTE,		// Source data type
+            pixelsRGB);             // Source data pointer
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 }
@@ -152,7 +151,7 @@ int main() {
         return -1;
     }
     std::cout << "File open - ok" << std::endl;
-    
+
     errCode = file.read();
     if (errCode != ErrorCode::Ok) {
         std::cout << "File read - error: " << static_cast<int>(errCode) << std::endl;
@@ -168,10 +167,6 @@ int main() {
         auto err = lodepng::decode(pixels, width, height, "../../data/img/cat.png", LodePNGColorType::LCT_RGBA);*/
 
         GLuint videoTextureId = 0;
-        const auto& width = file.decoderContext->width;
-        const auto& height = file.decoderContext->height;
-        const auto& pixelsRGB = file.pixelsRGB;
-
         glGenTextures(1, &videoTextureId);
         glBindTexture(GL_TEXTURE_2D, videoTextureId);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -180,19 +175,18 @@ int main() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         
-        auto err = glGetError();
+        const auto& width = file.decoderContext->width;
+        const auto& height = file.decoderContext->height;
+        const auto& pixelsRGB = file.pixelsRGB;
         glTexImage2D(GL_TEXTURE_2D, // Target
             0,						// Mip-level
-            GL_RGBA,			    // Формат текстуры
-            width,                  // Ширина текстуры
-            height,		            // Высота текстуры
-            0,						// Ширина границы
-            GL_RGB,			        // Формат исходных данных
-            GL_UNSIGNED_BYTE,		// Тип исходных данных
-            pixelsRGB);             // Указатель на исходные данные 
-
-        err = glGetError();
-
+            GL_RGBA,			    // Texture format
+            width,                  // Texture width
+            height,		            // Texture height
+            0,						// Border width
+            GL_RGB,			        // Source format
+            GL_UNSIGNED_BYTE,		// Source data type
+            pixelsRGB);             // Source data pointer
         glBindTexture(GL_TEXTURE_2D, 0);
         render.shaders.video.videoTextureId = videoTextureId;
     }
