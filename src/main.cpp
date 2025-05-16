@@ -147,12 +147,12 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);             // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
-    bool ok = file.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
-    if (!ok) {
-        std::cout << file.error << std::endl;
-        return -1;
-    } else {
+    auto errCode = file.openFile("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
+    if (errCode == ErrorCode::Ok) {
         std::cout << "File loaded" << std::endl;
+    } else {
+        std::cout << static_cast<int>(errCode) << std::endl;
+        return -1;
     }
 
     {

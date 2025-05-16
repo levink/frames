@@ -2,21 +2,37 @@
 
 #include "ffmpeg.h"
 
-struct PacketUnref {
-    AVPacket* packet = nullptr;
-    ~PacketUnref() {
-        if (packet) {
-            av_packet_unref(packet);
+struct PacketHolder {
+    AVPacket* data = nullptr;
+    ~PacketHolder() {
+        if (data) {
+            av_packet_unref(data);
         }
     }
 };
 
-struct FileInfo {
-    AVFormatContext* formatContext = nullptr;
-    int videoIndex = -1;
+enum class ErrorCode {
+    Ok = 0,
+    FileBadOpen = 1,
+    StreamNotFound = 2,
+    VideoStreamNotFound = 3,
+    CodecContextBadAlloc = 4,
+    CodecContextBadCopy = 5,
+    CodecContextBadInit = 6,
+    SwsContextBadAlloc  = 7,
+    
+    PacketBadAlloc = 8,
+    FrameBadAlloc  = 9,
 
+    Unknown
+};
+
+struct FileInfo {
+
+    AVFormatContext* formatContext = nullptr;
     AVCodecContext* codecContext = nullptr;
-    const AVCodec* codec = nullptr;
+    const AVCodec* decoder = nullptr;
+    int videoIndex = -1;
 
     SwsContext* swsContext = nullptr;
     uint8_t* pixelsRGBA = nullptr;
@@ -25,8 +41,7 @@ struct FileInfo {
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
 
-    std::string error;
-    bool openFile(const char* fileName);
+    ErrorCode openFile(const char* fileName);
     void processFrame(AVFrame* frame);
     void nextFrame();
 
@@ -57,78 +72,70 @@ struct FileInfo {
     }
 };
 
-bool FileInfo::openFile(const char* fileName) {
+ErrorCode FileInfo::openFile(const char* fileName) {
 
-    formatContext = avformat_alloc_context();
-    if (!formatContext) {
-        error = "formatContext bad alloc";
-        return false;
+    if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
+        return ErrorCode::FileBadOpen;
     }
 
-    int ret = avformat_open_input(&formatContext, fileName, nullptr, nullptr);
-    if (ret < 0) {
-        error = "Cannot open input file";
-        return false;
+    if (avformat_find_stream_info(formatContext, nullptr) < 0) {
+        return ErrorCode::StreamNotFound;
     }
 
-    ret = avformat_find_stream_info(formatContext, nullptr);
-    if (ret < 0) {
-        error = "Stream info not found";
-        return false;
+    videoIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
+    if (videoIndex < 0) {
+        return ErrorCode::VideoStreamNotFound;
     }
 
-    ret = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
-    if (ret < 0) {
-        error = "Video stream not found";
-        return false;
-    }
-    videoIndex = ret;
-
-    codecContext = avcodec_alloc_context3(codec);
-    if (!codecContext) {
-        error = "codecContext bad alloc";
-        return false;
+    codecContext = avcodec_alloc_context3(decoder);
+    if (codecContext == nullptr) {
+        return ErrorCode::CodecContextBadAlloc;
     }
 
-    const auto& stream = formatContext->streams[videoIndex];
-    ret = avcodec_parameters_to_context(codecContext, stream->codecpar);
-    if (ret < 0) {
-        error = "Bad copy params from stream to codec context";
-        return false;
+    const auto& videoStream = formatContext->streams[videoIndex];
+    if (avcodec_parameters_to_context(codecContext, videoStream->codecpar) < 0) {
+        return ErrorCode::CodecContextBadCopy;
     }
 
-    auto width = codecContext->width;
-    auto height = codecContext->height;
-    swsContext = sws_getContext(
-        width, height, codecContext->pix_fmt,
-        width, height, AV_PIX_FMT_RGB0,
-        SWS_BILINEAR, nullptr, nullptr, nullptr);
-    if (!swsContext) {
-        error = "swsContext bad alloc";
-        return false;
+    if (avcodec_open2(codecContext, decoder, nullptr) < 0) {
+        return ErrorCode::CodecContextBadInit;
     }
-    pixelsRGBA = new uint8_t[width * height * 4];
-    pixelsLineSize = width * 4;
 
-    ret = avcodec_open2(codecContext, codec, nullptr);
-    if (ret < 0) {
-        error = "Cannot open video decoder";
-        return false;
+    {
+        //why here?
+        auto width = codecContext->width;
+        auto height = codecContext->height;
+        swsContext = sws_getContext(
+            width, height, codecContext->pix_fmt,
+            width, height, AV_PIX_FMT_RGB0,
+            SwsFlags::SWS_BILINEAR,  // or SWS_FAST_BILINEAR?
+            nullptr, nullptr, nullptr);
+        if (!swsContext) {
+            return ErrorCode::SwsContextBadAlloc;
+        }
+
+        pixelsRGBA = new uint8_t[width * height * 4];
+        pixelsLineSize = width * 4;
     }
+
 
     packet = av_packet_alloc();
-    frame = av_frame_alloc();
-    if (!packet || !frame) {
-        error = "Packet or frame bad alloc";
-        return false;
+    if (packet == nullptr) {
+        return ErrorCode::PacketBadAlloc;
     }
-    
-    int frameSkip = 100; 
+
+    frame = av_frame_alloc();
+    if (!frame) {
+        return ErrorCode::FrameBadAlloc;
+    }
+
+    int frameSkip = 100;
     bool finished = false;
+    auto errCode = ErrorCode::Ok;
     while (av_read_frame(formatContext, packet) >= 0 && !finished) {
 
-        PacketUnref packetUnref{ packet };
-        int response = avcodec_send_packet(codecContext, packetUnref.packet);
+        PacketHolder packetHolder{ packet };
+        int response = avcodec_send_packet(codecContext, packetHolder.data);
         if (packet->stream_index != videoIndex) {
             continue;
         }
@@ -139,7 +146,8 @@ bool FileInfo::openFile(const char* fileName) {
                 break;
             }
             else if (response < 0) {
-                error = "Error on receive frame: " + std::to_string(response);
+                errCode = ErrorCode::Unknown; 
+                //error = "Error on receive frame: " + std::to_string(response);
                 finished = true;
                 break;
             }
@@ -155,8 +163,7 @@ bool FileInfo::openFile(const char* fileName) {
         }
     }
 
-    bool ok = (error == "");
-    return ok;
+    return errCode;
 }
 
 void FileInfo::processFrame(AVFrame* frame) {
