@@ -61,7 +61,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(COMMA)) {
-        file.readPrev();
+        file.prevFrame();
 
         const auto& width = file.decoderContext->width;
         const auto& height = file.decoderContext->height;
@@ -82,7 +82,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(PERIOD)) {
         //using namespace std::chrono;
         //auto t0 = high_resolution_clock::now();
-        file.readNext();
+        file.nextFrame();
 
         //auto t1 = high_resolution_clock::now();
         const auto& width = file.decoderContext->width;
@@ -146,6 +146,7 @@ int main() {
         return -1;
     }
 
+    glfwSetWindowPos(window, 600, 100);
     glfwWindowHint(GLFW_DEPTH_BITS, 16);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
     glfwMakeContextCurrent(window);
@@ -173,20 +174,20 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);             // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
-    auto errCode = file.open("C:/Users/Konst/Desktop/k/IMG_3504.MOV");
-    if (errCode != ErrorCode::Ok) {
-        std::cout << "File open - error: " << static_cast<int>(errCode) << std::endl;
+    const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
+    if (file.open(fileName)) {
+        std::cout << "File open - ok" << std::endl;
+    } else {
+        std::cout << "File open - error" << std::endl;
         return -1;
     }
-    std::cout << "File open - ok" << std::endl;
-
-    errCode = file.readNext();
-    if (errCode != ErrorCode::Ok) {
-        std::cout << "File read - error: " << static_cast<int>(errCode) << std::endl;
+   
+    if (file.nextFrame()) {
+        //std::cout << "File read - ok" << std::endl;
+    } else {
+        std::cout << "File read - error" << std::endl;
         return -1;
     }
-    //std::cout << "File read - ok" << std::endl;
-
 
     {
         /*std::vector<uint8_t> pixels;
