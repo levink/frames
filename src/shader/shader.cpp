@@ -1,8 +1,9 @@
 #include "shader.h"
 
-VideoShader::VideoShader() : Shader(2, 2) {
+VideoShader::VideoShader() : Shader(3, 2) {
     u[0] = Uniform("VideoTexture");
     u[1] = Uniform("Ortho");
+    u[2] = Uniform("Model");
     a[0] = Attribute(VEC_2, "in_Position");
     a[1] = Attribute(VEC_2, "in_Texture");
 }
@@ -12,7 +13,6 @@ void VideoShader::link(const Camera* camera) {
 void VideoShader::enable() const {
     Shader::enable();
     glEnable(GL_TEXTURE_2D);
-    //glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, videoTextureId);
     set1(u[0], 0);
     //glDisable(GL_DEPTH_TEST);
@@ -25,12 +25,12 @@ void VideoShader::enable() const {
 }
 void VideoShader::disable() const {
     Shader::disable();
-    //glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
 }
 void VideoShader::draw(const VideoMesh& mesh) {
     set4(u[1], context.camera->Ortho);
+    set4(u[2], mesh.modelMatrix);
     attr(a[0], mesh.position);
     attr(a[1], mesh.texture);
     drawFaces(mesh.face);

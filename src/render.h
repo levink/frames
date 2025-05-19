@@ -23,7 +23,7 @@ struct Render {
 
 	void loadResources();
 	void initResources();
-	void reshape(int width, int height);
+	//void reshape(int width, int height);
 	void reloadShaders();
 	void draw();
 	void destroy();

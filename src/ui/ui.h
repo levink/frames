@@ -18,6 +18,8 @@ namespace ui {
             SPACE = GLFW_KEY_SPACE,
             RIGHT = GLFW_KEY_RIGHT,
             LEFT = GLFW_KEY_LEFT,
+            UP = GLFW_KEY_UP,
+            DOWN = GLFW_KEY_DOWN,
             LEFT_SHIFT = GLFW_KEY_LEFT_SHIFT,
             LEFT_CONTROL = GLFW_KEY_LEFT_CONTROL,
             LEFT_ALT = GLFW_KEY_LEFT_ALT,
@@ -51,6 +53,8 @@ namespace ui {
             KEY_0 = GLFW_KEY_0,
             KP_ADD = GLFW_KEY_KP_ADD,
             KP_SUB = GLFW_KEY_KP_SUBTRACT,
+            MINUS = GLFW_KEY_MINUS,
+            EQUAL = GLFW_KEY_EQUAL,
             TAB = GLFW_KEY_TAB,
             DEL = GLFW_KEY_DELETE
         };

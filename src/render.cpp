@@ -17,9 +17,6 @@ void Render::initResources() {
 	shaders.create(shaderCache);
 	shaders.link(*this);
 }
-void Render::reshape(int width, int height) {
-	camera.reshape(width, height);
-}
 static void reloadShader(const char* path, ShaderSource& cache, Shader& shader) {
 	cache.load(path);
 	shader.destroy();
@@ -29,6 +26,13 @@ void Render::reloadShaders() {
 	reloadShader(shader_path::video, shaderCache.video, shaders.video);
 }
 void Render::draw() {
+
+	const auto& x = camera.viewOffset.x;
+	const auto& y = camera.viewOffset.y;
+	const auto& w = camera.viewSize.x;
+	const auto& h = camera.viewSize.y;
+	
+	glViewport(x, y, w, h);
 	shaders.video.enable();
 	shaders.video.draw(videoMesh);
 	shaders.video.disable();
