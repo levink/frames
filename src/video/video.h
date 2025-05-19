@@ -15,6 +15,7 @@ enum class ErrorCode {
     FrameBadAlloc        = 9,
     ReadBadSent          = 10,
     ReadBadReceive       = 11,
+    SeekBad              = 12,
     
     Unknown
 };
@@ -29,10 +30,12 @@ struct FileReader {
     AVFrame* frame = nullptr;
     uint8_t* pixelsRGB = nullptr;
     int videoIndex = -1;
-    bool hasWork = false;
+    bool decoderHasData = false;
 
     ErrorCode open(const char* fileName);
-    ErrorCode read();
+    ErrorCode readNext();
+    ErrorCode readPrev();
+    void debug();
 
     FileReader() {
         av_log_set_level(AV_LOG_FATAL);
@@ -52,6 +55,7 @@ struct FileReader {
             av_packet_free(&packet);
         }
         if (frame) {
+            av_frame_unref(frame);
             av_frame_free(&frame);
         }
 
@@ -115,64 +119,117 @@ ErrorCode FileReader::open(const char* fileName) {
     return ErrorCode::Ok;
 }
 
-ErrorCode FileReader::read() {
-
-    // continue work from previous call
-    if (hasWork) {
-        int recv = avcodec_receive_frame(decoderContext, frame);
-        if (recv == 0 ) {
-            processFrame(frame);
-            return ErrorCode::Ok;
+void FileReader::debug() {
+    int ret = 0;
+    while (1) {
+        ret = av_read_frame(formatContext, packet);
+        if (ret < 0) {
+            break;
         }
 
-        hasWork = false;
-        av_packet_unref(packet);
-
-        if (recv != AVERROR(EAGAIN)) {
-            return ErrorCode::ReadBadReceive;
-        }
-    }
-    
-    while (av_read_frame(formatContext, packet) >= 0) {
         if (packet->stream_index != videoIndex) {
+            //std::cout << "av_read_frame skip, not a video" << std::endl;
+            av_packet_unref(packet);
+            continue;
+        }
+        else {
+            //std::cout << "av_read_frame ok, found video frame" << std::endl;
+        }
+
+        ret = avcodec_send_packet(decoderContext, packet);
+        if (ret < 0) {
+            break;
+        }
+        ret = avcodec_receive_frame(decoderContext, frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            av_packet_unref(packet);
+            continue;
+        }
+        if (ret >= 0) {
+            processFrame(frame);
+            av_frame_unref(frame);
+        }
+        av_packet_unref(packet);
+    }
+}
+
+ErrorCode FileReader::readNext() {
+    
+    int ret = 0;
+    while (1) {
+        ret = av_read_frame(formatContext, packet);
+        if (ret < 0) {
+            break;
+        }
+
+        if (packet->stream_index != videoIndex) {
+            av_packet_unref(packet);
             continue;
         }
 
-        // Send packet to decoder
-        int send = avcodec_send_packet(decoderContext, packet);
-        if (send != 0) {
-            av_packet_unref(packet);
-            return ErrorCode::ReadBadSent;
+        ret = avcodec_send_packet(decoderContext, packet);
+        if (ret < 0) {
+            break;
         }
-
-        // Receive frame from decoder
-        int recv = avcodec_receive_frame(decoderContext, frame);
-        if (recv == 0) {
+        ret = avcodec_receive_frame(decoderContext, frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            av_packet_unref(packet);
+            continue;
+        }
+        if (ret >= 0) {
             processFrame(frame);
-            hasWork = true;
+            av_frame_unref(frame);
+            av_packet_unref(packet);
             return ErrorCode::Ok;
         }
         av_packet_unref(packet);
-
-        if (recv != AVERROR(EAGAIN)) {
-            return ErrorCode::ReadBadReceive;
-        } 
     }
 
+    std::cout << "Finished" << std::endl;
     return ErrorCode::Ok;
 }
 
 void FileReader::processFrame(const AVFrame* frame) const {
-    uint8_t* destFrame[4] = { pixelsRGB, nullptr, nullptr, nullptr };
-    int destLineSize[4] = { frame->width * 3, 0, 0, 0 };
+    static uint8_t* destFrame[AV_NUM_DATA_POINTERS] = { nullptr };
+    static int destLineSize[AV_NUM_DATA_POINTERS] = { 0 };
     
+    destFrame[0] = pixelsRGB;
+    destLineSize[0] = 3 * frame->width;
     int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
     if (ret < 0) {
         std::cout << "processFrame: sws_scale() return " << ret << std::endl;
     }
 
+    int64_t pts = frame->best_effort_timestamp == AV_NOPTS_VALUE ? frame->pts : frame->best_effort_timestamp;
+    int frameIndex = pts / 20;
+    std::cout << "pts[" << frameIndex << "] = " << pts << " " << av_get_picture_type_char(frame->pict_type) << std::endl;
+
    /* auto retPNG = lodepng::encode("./testRGB.png", pixelsRGB, frame->width, frame->height, LodePNGColorType::LCT_RGB);
     if (retPNG) {
         std::cout << "lodepng::encode() on rgb: Error code=" << retPNG << std::endl;
     }*/
+}
+
+
+ErrorCode FileReader::readPrev() {
+
+    const AVStream* stream = formatContext->streams[videoIndex];
+    const AVRational& time_base = stream->time_base;
+    const AVRational& frame_rate = stream->r_frame_rate;
+    int64_t num = static_cast<int64_t>(frame_rate.den) * time_base.den;
+    int64_t den = static_cast<int64_t>(frame_rate.num) * time_base.num;
+    int64_t duration = num / den;
+    int64_t cur_pts = frame->best_effort_timestamp == AV_NOPTS_VALUE ? frame->pts : frame->best_effort_timestamp;
+    int64_t prev_pts = cur_pts > 2 * duration ? (cur_pts - 2 * duration) : 0;
+    
+
+    int64_t pts = frame->best_effort_timestamp == AV_NOPTS_VALUE ? frame->pts : frame->best_effort_timestamp;
+    int64_t frameIndex = pts / 20 - 1;
+
+    int seek_res = av_seek_frame(formatContext, videoIndex, pts - 20, AVSEEK_FLAG_BACKWARD);
+    if (seek_res < 0) {
+        return ErrorCode::SeekBad;
+    }
+    avcodec_flush_buffers(decoderContext);
+    return readNext();
 }

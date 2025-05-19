@@ -1,6 +1,7 @@
 ﻿#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <chrono>
 #include "image/lodepng.h"
 #include "video/video.h"
 #include "ui/ui.h"
@@ -59,8 +60,8 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         std::cout << "Reload shaders" << std::endl;
         render.reloadShaders();
     }
-    else if (key.is(PERIOD)) {
-        file.read();
+    else if (key.is(COMMA)) {
+        file.readPrev();
 
         const auto& width = file.decoderContext->width;
         const auto& height = file.decoderContext->height;
@@ -77,6 +78,33 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
             GL_UNSIGNED_BYTE,		// Source data type
             pixelsRGB);             // Source data pointer
         glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    else if (key.is(PERIOD)) {
+        //using namespace std::chrono;
+        //auto t0 = high_resolution_clock::now();
+        file.readNext();
+
+        //auto t1 = high_resolution_clock::now();
+        const auto& width = file.decoderContext->width;
+        const auto& height = file.decoderContext->height;
+        const auto& pixelsRGB = file.pixelsRGB;
+        const auto& textureId = render.shaders.video.videoTextureId;
+        glBindTexture(GL_TEXTURE_2D, textureId);
+        glTexImage2D(GL_TEXTURE_2D, // Target
+            0,						// Mip-level
+            GL_RGBA,			    // Texture format
+            width,                  // Texture width
+            height,		            // Texture height
+            0,						// Border width
+            GL_RGB,			        // Source format
+            GL_UNSIGNED_BYTE,		// Source data type
+            pixelsRGB);             // Source data pointer
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        /*auto t2 = high_resolution_clock::now();
+        auto delta1 = std::chrono::duration_cast<milliseconds>(t1 - t0);
+        auto delta2 = std::chrono::duration_cast<milliseconds>(t2 - t1);*/
+        //std::cout << "delta1=" << delta1 << " delta2=" << delta2 << std::endl;
     }
 }
 /*void mouseCallback(ui::mouse::MouseEvent event) {
@@ -152,12 +180,12 @@ int main() {
     }
     std::cout << "File open - ok" << std::endl;
 
-    errCode = file.read();
+    errCode = file.readNext();
     if (errCode != ErrorCode::Ok) {
         std::cout << "File read - error: " << static_cast<int>(errCode) << std::endl;
         return -1;
     }
-    std::cout << "File read - ok" << std::endl;
+    //std::cout << "File read - ok" << std::endl;
 
 
     {
