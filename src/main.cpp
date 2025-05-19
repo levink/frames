@@ -13,39 +13,19 @@
 FileReader file;
 Render render;
 
-namespace png {
-    static void saveGrayPng(const char* fileName, const AVFrame* frame) {
-        const auto width = frame->width;
-        const auto height = frame->height;
-        const auto lineSize = frame->linesize[0];
-
-        std::vector<uint8_t> pixelsGray(width * height * 4, 0);
-        uint8_t* lineBegin = frame->data[0];
-        for (int y = 0; y < frame->height; y++) {
-            for (int x = 0; x < frame->width; x++) {
-                uint8_t gray = lineBegin[x];
-
-                auto base = (y * width + x) * 4;
-                auto rIndex = base + 0;
-                auto gIndex = base + 1;
-                auto bIndex = base + 2;
-                auto aIndex = base + 3;
-
-                pixelsGray[rIndex] = gray;
-                pixelsGray[gIndex] = gray;
-                pixelsGray[bIndex] = gray;
-                pixelsGray[aIndex] = 255;
-            }
-            lineBegin += lineSize;
-        }
-
-        unsigned retPNG = lodepng::encode(fileName, pixelsGray, width, height, LodePNGColorType::LCT_RGBA);
-        if (retPNG) {
-            std::cout << "lodepng::encode() on gray: Error code=" << retPNG << std::endl;
-        }
-    }
+static void updateTexture(GLuint textureId, const FileReader& reader) {
+    glBindTexture(GL_TEXTURE_2D, textureId);
+    glTexImage2D(GL_TEXTURE_2D, // Target
+        0,						// Mip-level
+        GL_RGBA,			    // Texture format
+        reader.pixelsWidth,     // Texture width
+        reader.pixelsHeight,    // Texture height
+        0,						// Border width
+        GL_RGB,			        // Source format
+        GL_UNSIGNED_BYTE,		// Source data type
+        reader.pixelsRGB);      // Source data pointer
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
-
 static void reshape(GLFWwindow*, int w, int h) {
     render.reshape(w, h);
 }
@@ -62,49 +42,21 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(COMMA)) {
         file.prevFrame();
-
-        const auto& width = file.decoderContext->width;
-        const auto& height = file.decoderContext->height;
-        const auto& pixelsRGB = file.pixelsRGB;
         const auto& textureId = render.shaders.video.videoTextureId;
-        glBindTexture(GL_TEXTURE_2D, textureId);
-        glTexImage2D(GL_TEXTURE_2D, // Target
-            0,						// Mip-level
-            GL_RGBA,			    // Texture format
-            width,                  // Texture width
-            height,		            // Texture height
-            0,						// Border width
-            GL_RGB,			        // Source format
-            GL_UNSIGNED_BYTE,		// Source data type
-            pixelsRGB);             // Source data pointer
-        glBindTexture(GL_TEXTURE_2D, 0);
+        updateTexture(textureId, file);
     }
     else if (key.is(PERIOD)) {
-        //using namespace std::chrono;
-        //auto t0 = high_resolution_clock::now();
         file.nextFrame();
-
-        //auto t1 = high_resolution_clock::now();
-        const auto& width = file.decoderContext->width;
-        const auto& height = file.decoderContext->height;
-        const auto& pixelsRGB = file.pixelsRGB;
         const auto& textureId = render.shaders.video.videoTextureId;
-        glBindTexture(GL_TEXTURE_2D, textureId);
-        glTexImage2D(GL_TEXTURE_2D, // Target
-            0,						// Mip-level
-            GL_RGBA,			    // Texture format
-            width,                  // Texture width
-            height,		            // Texture height
-            0,						// Border width
-            GL_RGB,			        // Source format
-            GL_UNSIGNED_BYTE,		// Source data type
-            pixelsRGB);             // Source data pointer
-        glBindTexture(GL_TEXTURE_2D, 0);
+        updateTexture(textureId, file);
 
-        /*auto t2 = high_resolution_clock::now();
+        /*using namespace std::chrono;
+        auto t0 = high_resolution_clock::now();
+        auto t1 = high_resolution_clock::now();
+        auto t2 = high_resolution_clock::now();
         auto delta1 = std::chrono::duration_cast<milliseconds>(t1 - t0);
-        auto delta2 = std::chrono::duration_cast<milliseconds>(t2 - t1);*/
-        //std::cout << "delta1=" << delta1 << " delta2=" << delta2 << std::endl;
+        auto delta2 = std::chrono::duration_cast<milliseconds>(t2 - t1);
+        std::cout << "delta1=" << delta1 << " delta2=" << delta2 << std::endl;*/
     }
 }
 /*void mouseCallback(ui::mouse::MouseEvent event) {
@@ -175,7 +127,7 @@ int main() {
     ImGui_ImplOpenGL3_Init();
 
     const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
-    if (file.open(fileName)) {
+    if (file.openFile(fileName)) {
         std::cout << "File open - ok" << std::endl;
     } else {
         std::cout << "File open - error" << std::endl;

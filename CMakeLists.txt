@@ -23,20 +23,19 @@ add_executable(app
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
 	src/ui/ui.cpp
+	src/video/video.cpp
 	src/main.cpp
 	src/render.cpp
 )
 
-target_precompile_headers(app PRIVATE src/video/ffmpeg.h)
-#set_target_properties(app PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup /SUBSYSTEM:WINDOWS")
-
+target_precompile_headers(app PRIVATE ${PROJECT_SOURCE_DIR}/src/video/ffmpeg.h)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/include/ffmpeg/)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/lib/imgui/)
-
 target_link_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/lib/ffmpeg)
-
 target_link_libraries(app PRIVATE glad glfw ffmpeg imgui)
+#set_target_properties(app PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup /SUBSYSTEM:WINDOWS")
+
 
 file(COPY ${FFMPEG_DLL_PATH} DESTINATION ${CMAKE_BINARY_DIR})
 
