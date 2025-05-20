@@ -2,63 +2,7 @@
 #include "shaderBase.h"
 #include "shader/shaderLog.h"
 
-
-Attribute::Attribute() : id(-1), size(-1), type(GL_NONE) {}
-Attribute::Attribute(GLSLType type, std::string name) :
-    id(-1),
-    size(type.size),
-    type(type.type),
-    name(std::move(name)) {
-}
-
-Uniform::Uniform() : id(-1) {}
-Uniform::Uniform(std::string name) :
-    id(-1),
-    name(std::move(name)) {
-}
-
-Shader::Shader(uint8_t uniforms, uint8_t attributes) :
-    programId(0),
-    vertexShader(0),
-    fragmentShader(0) {
-    u.resize(uniforms);
-    a.resize(attributes);
-}
-Shader::~Shader() {
-    destroy();
-}
-void Shader::destroy() {
-    if (programId > 0) {
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-        glDeleteProgram(programId);
-        programId = 0;
-        vertexShader = 0;
-        fragmentShader = 0;
-    }
-}
-void Shader::create(const ShaderSource& source) {
-    vertexShader = compile(GL_VERTEX_SHADER, source.vertex.c_str());
-    fragmentShader = compile(GL_FRAGMENT_SHADER, source.fragment.c_str());
-    programId = link(vertexShader, fragmentShader);
-    if (!programId) {
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-        vertexShader = 0;
-        fragmentShader = 0;
-        return;
-    }
-
-    glUseProgram(programId);
-    for (auto& uniform : u) {
-        uniform.id = glGetUniformLocation(programId, uniform.name.c_str());
-    }
-    for (auto& attribute : a) {
-        attribute.id = glGetAttribLocation(programId, attribute.name.c_str());
-    }
-    glUseProgram(0);
-}
-GLuint Shader::compile(GLenum shaderType, const char* shaderText) {
+static GLuint compile(GLenum shaderType, const char* shaderText) {
     if (shaderText == nullptr) {
         std::string error;
         switch (shaderType) {
@@ -100,7 +44,7 @@ GLuint Shader::compile(GLenum shaderType, const char* shaderText) {
     glDeleteShader(shader);
     return 0;
 }
-GLuint Shader::link(GLuint vertexShader, GLuint fragmentShader) {
+static GLuint link(GLuint vertexShader, GLuint fragmentShader) {
     if (!vertexShader || !fragmentShader) {
         ShaderLog::warn("Can't link shader because of empty parts");
         return 0;
@@ -135,6 +79,58 @@ GLuint Shader::link(GLuint vertexShader, GLuint fragmentShader) {
     glDeleteShader(fragmentShader);
     glDeleteProgram(program);
     return 0;
+}
+static GLuint build(const ShaderSource& source) {
+    GLuint vertexShader = compile(GL_VERTEX_SHADER, source.vertex.c_str());
+    GLuint fragmentShader = compile(GL_FRAGMENT_SHADER, source.fragment.c_str());
+    GLuint programId = link(vertexShader, fragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    return programId;
+}
+
+Attribute::Attribute() : id(-1), size(-1), type(GL_NONE) {}
+Attribute::Attribute(GLSLType type, std::string name) :
+    id(-1),
+    size(type.size),
+    type(type.type),
+    name(std::move(name)) {
+}
+
+Uniform::Uniform() : id(-1) {}
+Uniform::Uniform(std::string name) :
+    id(-1),
+    name(std::move(name)) {
+}
+
+Shader::Shader(uint8_t uniforms, uint8_t attributes) :
+    programId(0) {
+    u.resize(uniforms);
+    a.resize(attributes);
+}
+Shader::~Shader() {
+    destroy();
+}
+void Shader::create(const ShaderSource& source) {
+    programId = build(source);
+    if (programId == 0) {
+        return;
+    }
+
+    glUseProgram(programId);
+    for (auto& uniform : u) {
+        uniform.id = glGetUniformLocation(programId, uniform.name.c_str());
+    }
+    for (auto& attribute : a) {
+        attribute.id = glGetAttribLocation(programId, attribute.name.c_str());
+    }
+    glUseProgram(0);
+}
+void Shader::destroy() {
+    if (programId > 0) {
+        glDeleteProgram(programId);
+        programId = 0;
+    }
 }
 void Shader::enable() const {
     glUseProgram(programId);
@@ -207,7 +203,3 @@ void Shader::drawFaces(const std::vector<GLFace>& faces) {
     }
     glDrawElements(GL_TRIANGLES, static_cast<int>(faces.size() * 3u), GL_UNSIGNED_SHORT, faces.data());
 }
-
-
-
-

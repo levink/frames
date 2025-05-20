@@ -1,7 +1,7 @@
 #include "mesh.h"
 #include <glm/gtc/matrix_transform.hpp>
 
-void VideoMesh::setSize(int w, int h) {
+void Mesh::setSize(int w, int h) {
     position = {
         { 0, 0 },
         { w, 0 },
@@ -18,13 +18,30 @@ void VideoMesh::setSize(int w, int h) {
         { 0, 1, 2 },
         { 2, 3, 0 }
     };
+
+    size = { w, h };
+    offset = { 0, 0 };// { -w / 2.f, -h / 2.f };
+    scale = { 1, 1 };
+    modelMatrix = glm::translate(glm::mat4(1), { offset.x, offset.y, 0 });
 }
 
-void VideoMesh::move(int dx, int dy) {
-    modelMatrix = glm::translate(modelMatrix, { dx, dy, 0 });
+void Mesh::move(int x, int y) {
+    offset.x = x;
+    offset.y = y;
+    modelMatrix = glm::translate(glm::mat4(1), { offset.x, offset.y, 0 });
 }
 
-void VideoMesh::scale(float value) {
-    modelMatrix = glm::scale(modelMatrix, { value, value, 1 });
+void Mesh::zoom(float value) {
+    scale += value;
+
+   /* glm::vec3 point = {
+        zoomPoint.x,
+        zoomPoint.y,
+        0.f
+    };
+    
+    viewMatrix = glm::translate(glm::mat4(1), point);
+    viewMatrix = glm::scale(viewMatrix, { scale.x, scale.y, 1 });
+    viewMatrix = glm::translate(viewMatrix, -point);*/
 }
 

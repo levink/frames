@@ -33,8 +33,6 @@ protected:
     constexpr static const GLSLType VEC_2 = GLSLType{ 2, GL_FLOAT };
     constexpr static const GLSLType VEC_3 = GLSLType{ 3, GL_FLOAT };
 
-    static GLuint compile(GLenum shaderType, const char* shaderText);
-    static GLuint link(GLuint vertexShader, GLuint fragmentShader);
     static void attr(const Attribute& attribute, const void* data, GLsizei stride, GLuint offset);
     static void attr(const Attribute& attribute, GLsizei stride, GLuint offset);
     static void attr(const Attribute& attribute, const std::vector<float>& data);
@@ -46,8 +44,6 @@ protected:
     static void drawFaces(const std::vector<GLFace>& faces);
 
     GLuint programId;
-    GLuint vertexShader;
-    GLuint fragmentShader;
     std::vector<Attribute> a;
     std::vector<Uniform> u;
 public:

@@ -14,6 +14,9 @@ FileReader file;
 Render render;
 
 static void updateTexture(GLuint textureId, const FileReader& reader) {
+    //todo: 
+    // 1. glTexSubImage2D is probably better for update than glTexImage2D
+    // 2. or use PBO for streaming
     glBindTexture(GL_TEXTURE_2D, textureId);
     glTexImage2D(GL_TEXTURE_2D, // Target
         0,						// Mip-level
@@ -60,49 +63,39 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         auto delta2 = std::chrono::duration_cast<milliseconds>(t2 - t1);
         std::cout << "delta1=" << delta1 << " delta2=" << delta2 << std::endl;*/
     }
-    else if (key.is(LEFT)) {
-        render.videoMesh.move(+50, 0);
-    }
-    else if (key.is(RIGHT)) {
-        render.videoMesh.move(-50, 0);
-    }
-    else if (key.is(UP)) {
-        render.videoMesh.move(0, -50);
-    }
-    else if (key.is(DOWN)) {
-        render.videoMesh.move(0, +50);
-    }
-    else if (key.is(MINUS)) {
-        render.camera.scale(0.9);
-        //render.videoMesh.scale(0.9);
-    }
-    else if (key.is(EQUAL)) {
-        render.camera.scale(1.1);
-        //render.videoMesh.scale(1.1);
-    }
 }
-/*void mouseCallback(ui::mouse::MouseEvent event) {
-   using namespace ui;
+static void mouseCallback(ui::mouse::MouseEvent event) {
+    using namespace ui;
     using namespace ui::mouse;
 
     auto cursor = event.getCursor();
-    cursor.y = (float)render.camera.viewSize.y - cursor.y;
-    auto& scene = render.scene;
+    cursor.y = render.camera.vp.height - cursor.y;
 
-    if (event.is(Action::PRESS, Button::LEFT)) scene.selectPoint(cursor);
-    else if (event.is(Action::PRESS, Button::RIGHT)) scene.addPoint(cursor);
-    else if (event.is(Action::MOVE, Button::LEFT))  scene.movePoint(cursor);
-    else if (event.is(Action::RELEASE, Button::LEFT)) scene.recover();
-} */
+    auto& drag = render.drag;
+    if (event.is(Action::PRESS, Button::LEFT)) {
+        drag.dragStart(cursor, render.mesh.offset);
+    }
+    else if (event.is(Action::MOVE, Button::LEFT)) {
+        drag.dragMove(cursor);
+        render.mesh.move(drag.end.x, drag.end.y);
+    }
+    else if (event.is(Action::RELEASE, Button::LEFT)) {
+        drag.dragStop(cursor);
+    }
+}
 static void mouseClick(GLFWwindow*, int button, int action, int mods) {
-  /*  auto event = ui::mouse::click(button, action, mods);
-    mouseCallback(event);*/
+    auto event = ui::mouse::click(button, action, mods);
+    mouseCallback(event);
 }
 static void mouseMove(GLFWwindow*, double x, double y) {
-    /*auto mx = static_cast<int>(x);
+    auto mx = static_cast<int>(x);
     auto my = static_cast<int>(y);
     auto event = ui::mouse::move(mx, my);
-    mouseCallback(event);*/
+    mouseCallback(event);
+}
+static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
+    float value = yoffset * 0.1;
+    render.mesh.zoom(value);
 }
 
 int main() {
@@ -134,6 +127,7 @@ int main() {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetMouseButtonCallback(window, mouseClick);
     glfwSetCursorPosCallback(window, mouseMove);
+    glfwSetScrollCallback(window, mouseScroll);
     glfwSwapInterval(1);
     glfwSetTime(0.0);
 
@@ -188,13 +182,18 @@ int main() {
             file.pixelsRGB);        // Source data pointer
         glBindTexture(GL_TEXTURE_2D, 0);
         render.shaders.video.videoTextureId = videoTextureId;
-        render.videoMesh.setSize(file.pixelsWidth, file.pixelsHeight);
+        render.mesh.setSize(file.pixelsWidth, file.pixelsHeight);
     }
 
 
     const auto& style = ImGui::GetStyle();
     const auto sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
     render.camera.reshape(0, sliderHeight, sceneWidth, sceneHeight - sliderHeight);
+    
+   /* int zoomX = render.camera.vp.width / 2;
+    int zoomY = render.camera.vp.height / 2;
+    render.mesh.setZoomPoint(zoomX, zoomY);*/
+
     render.loadResources();
     render.initResources();
 

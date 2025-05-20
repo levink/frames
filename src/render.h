@@ -1,25 +1,19 @@
 #pragma once
 #include "shader/shader.h"
-#include "shader/shaderSource.h"
+#include "ui/dragdrop.h"
 
 struct Render; //forward
 
-struct ShaderCache {
-	ShaderSource video;
-};
-
 struct Shaders {
+	ShaderSource videoSource;
 	VideoShader video;
-	void create(const ShaderCache& cache);
-	void link(const Render& render);
-	void destroy();
 };
 
 struct Render {
-	Camera camera;
 	Shaders shaders;
-	ShaderCache shaderCache;
-	VideoMesh videoMesh;
+	DragDrop drag;
+	Camera camera;
+	Mesh mesh;
 
 	void loadResources();
 	void initResources();
