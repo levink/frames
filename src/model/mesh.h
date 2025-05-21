@@ -22,4 +22,7 @@ struct Mesh {
     void setSize(int w, int h);
     void move(int x, int y);
     void zoom(float value);
+
+private:
+    void updateMatrix();
 };

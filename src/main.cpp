@@ -78,6 +78,7 @@ static void mouseCallback(ui::mouse::MouseEvent event) {
     else if (event.is(Action::MOVE, Button::LEFT)) {
         drag.dragMove(cursor);
         render.mesh.move(drag.end.x, drag.end.y);
+        std::cout << drag.end.x << " " << drag.end.y << std::endl;
     }
     else if (event.is(Action::RELEASE, Button::LEFT)) {
         drag.dragStop(cursor);
@@ -189,11 +190,6 @@ int main() {
     const auto& style = ImGui::GetStyle();
     const auto sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
     render.camera.reshape(0, sliderHeight, sceneWidth, sceneHeight - sliderHeight);
-    
-   /* int zoomX = render.camera.vp.width / 2;
-    int zoomY = render.camera.vp.height / 2;
-    render.mesh.setZoomPoint(zoomX, zoomY);*/
-
     render.loadResources();
     render.initResources();
 

@@ -1,5 +1,6 @@
 #include "mesh.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
 
 void Mesh::setSize(int w, int h) {
     position = {
@@ -19,29 +20,30 @@ void Mesh::setSize(int w, int h) {
         { 2, 3, 0 }
     };
 
-    size = { w, h };
-    offset = { 0, 0 };// { -w / 2.f, -h / 2.f };
+    offset = { 0, 0 };
     scale = { 1, 1 };
-    modelMatrix = glm::translate(glm::mat4(1), { offset.x, offset.y, 0 });
+    modelMatrix = glm::mat4(1);// glm::translate(glm::mat4(1), { offset.x, offset.y, 0 });
+}
+
+
+void Mesh::updateMatrix() {
+    
+
+    modelMatrix = glm::mat4(1);
+    //modelMatrix = glm::translate(modelMatrix, { offset.x * scale.x, offset.y * scale.y, 0 });
+    modelMatrix = glm::scale(modelMatrix, { scale.x, scale.y, 1 });
+    modelMatrix = glm::translate(modelMatrix, { offset.x, offset.y, 0 });
+    //modelMatrix = glm::translate(modelMatrix, { offset.x / scale.x, offset.y / scale.y, 0 });
 }
 
 void Mesh::move(int x, int y) {
     offset.x = x;
     offset.y = y;
-    modelMatrix = glm::translate(glm::mat4(1), { offset.x, offset.y, 0 });
+    updateMatrix();
 }
 
 void Mesh::zoom(float value) {
     scale += value;
-
-   /* glm::vec3 point = {
-        zoomPoint.x,
-        zoomPoint.y,
-        0.f
-    };
-    
-    viewMatrix = glm::translate(glm::mat4(1), point);
-    viewMatrix = glm::scale(viewMatrix, { scale.x, scale.y, 1 });
-    viewMatrix = glm::translate(viewMatrix, -point);*/
+    updateMatrix();
 }
 
