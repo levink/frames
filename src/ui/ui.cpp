@@ -84,8 +84,8 @@ namespace ui {
 
     namespace mouse {
         MouseEvent move(int x, int y) {
-            auto dx = ui_state.x - x;
-            auto dy = ui_state.y - y;
+            auto dx = x - ui_state.x;
+            auto dy = y - ui_state.y;
             ui_state.x = x;
             ui_state.y = y;
             return MouseEvent{ ui_state.mousePressed, Action::MOVE, dx, dy };

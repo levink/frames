@@ -22,28 +22,24 @@ void Mesh::setSize(int w, int h) {
 
     offset = { 0, 0 };
     scale = { 1, 1 };
-    modelMatrix = glm::mat4(1);// glm::translate(glm::mat4(1), { offset.x, offset.y, 0 });
+    modelMatrix = glm::mat4(1);
 }
-
 
 void Mesh::updateMatrix() {
-    
-
     modelMatrix = glm::mat4(1);
-    //modelMatrix = glm::translate(modelMatrix, { offset.x * scale.x, offset.y * scale.y, 0 });
     modelMatrix = glm::scale(modelMatrix, { scale.x, scale.y, 1 });
     modelMatrix = glm::translate(modelMatrix, { offset.x, offset.y, 0 });
-    //modelMatrix = glm::translate(modelMatrix, { offset.x / scale.x, offset.y / scale.y, 0 });
 }
 
-void Mesh::move(int x, int y) {
-    offset.x = x;
-    offset.y = y;
+void Mesh::move(int deltaX, int deltaY) {
+    offset.x += deltaX / scale.x;
+    offset.y += deltaY / scale.y;
     updateMatrix();
 }
 
 void Mesh::zoom(float value) {
-    scale += value;
+    scale.x += value;
+    scale.y += value;
     updateMatrix();
 }
 

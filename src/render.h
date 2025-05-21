@@ -1,6 +1,5 @@
 #pragma once
 #include "shader/shader.h"
-#include "ui/dragdrop.h"
 
 struct Render; //forward
 
@@ -11,7 +10,6 @@ struct Shaders {
 
 struct Render {
 	Shaders shaders;
-	DragDrop drag;
 	Camera camera;
 	Mesh mesh;
 

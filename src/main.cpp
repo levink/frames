@@ -3,8 +3,8 @@
 #include <iostream>
 #include <chrono>
 #include "image/lodepng.h"
-#include "video/video.h"
 #include "ui/ui.h"
+#include "video/video.h"
 #include "render.h"
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
@@ -67,21 +67,9 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
 static void mouseCallback(ui::mouse::MouseEvent event) {
     using namespace ui;
     using namespace ui::mouse;
-
-    auto cursor = event.getCursor();
-    cursor.y = render.camera.vp.height - cursor.y;
-
-    auto& drag = render.drag;
-    if (event.is(Action::PRESS, Button::LEFT)) {
-        drag.dragStart(cursor, render.mesh.offset);
-    }
-    else if (event.is(Action::MOVE, Button::LEFT)) {
-        drag.dragMove(cursor);
-        render.mesh.move(drag.end.x, drag.end.y);
-        std::cout << drag.end.x << " " << drag.end.y << std::endl;
-    }
-    else if (event.is(Action::RELEASE, Button::LEFT)) {
-        drag.dragStop(cursor);
+    if (event.is(Action::MOVE, Button::LEFT)) {
+        auto delta = event.getDelta();
+        render.mesh.move(delta.x, -delta.y);
     }
 }
 static void mouseClick(GLFWwindow*, int button, int action, int mods) {
@@ -97,6 +85,7 @@ static void mouseMove(GLFWwindow*, double x, double y) {
 static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
     float value = yoffset * 0.1;
     render.mesh.zoom(value);
+    //std::cout << render.mesh.scale.x << std::endl;
 }
 
 int main() {
@@ -105,9 +94,9 @@ int main() {
         return -1;
     }
     
-    constexpr int sceneWidth = 800;
-    constexpr int sceneHeight = 600;
-    GLFWwindow* window = glfwCreateWindow(sceneWidth, sceneHeight, "Frames", nullptr, nullptr);
+    constexpr int windowWidth = 800;
+    constexpr int windowHeight = 600;
+    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Frames", nullptr, nullptr);
     if (!window) {
         std::cout << "glfwCreateWindow error" << std::endl;
         glfwTerminate();
@@ -131,7 +120,6 @@ int main() {
     glfwSetScrollCallback(window, mouseScroll);
     glfwSwapInterval(1);
     glfwSetTime(0.0);
-
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -189,7 +177,10 @@ int main() {
 
     const auto& style = ImGui::GetStyle();
     const auto sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
-    render.camera.reshape(0, sliderHeight, sceneWidth, sceneHeight - sliderHeight);
+
+
+
+    render.camera.reshape(0, sliderHeight, windowWidth, windowHeight - sliderHeight);
     render.loadResources();
     render.initResources();
 

@@ -14,7 +14,6 @@ add_subdirectory(lib/imgui)
 add_executable(app 
 	lib/imgui/backends/imgui_impl_glfw.cpp
     lib/imgui/backends/imgui_impl_opengl3.cpp
-
 	src/image/lodepng.cpp
 	src/model/camera.cpp
 	src/model/mesh.cpp
@@ -22,7 +21,6 @@ add_executable(app
 	src/shader/shaderBase.cpp
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
-	src/ui/dragdrop.cpp
 	src/ui/ui.cpp
 	src/video/video.cpp
 	src/main.cpp

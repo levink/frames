@@ -20,7 +20,7 @@ struct Mesh {
     glm::fvec2 scale        = { 1, 1 };
 
     void setSize(int w, int h);
-    void move(int x, int y);
+    void move(int deltaX, int deltaY);
     void zoom(float value);
 
 private:
