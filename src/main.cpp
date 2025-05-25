@@ -10,8 +10,14 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-FileReader file;
+struct View {
+    int windowWidth = 0;
+    int windowHeight = 0;
+};
+
+View view;
 Render render;
+FileReader file;
 
 static void updateTexture(GLuint textureId, const FileReader& reader) {
     //todo: 
@@ -29,10 +35,19 @@ static void updateTexture(GLuint textureId, const FileReader& reader) {
         reader.pixelsRGB);      // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
 }
+static void reshapeScene(int windowWidth, int windowHeight) {
+    view.windowWidth = windowWidth;
+    view.windowHeight = windowHeight;
+    const auto& style = ImGui::GetStyle();
+    const auto sliderHeight =
+        ImGui::GetFontSize() +
+        style.FramePadding.y * 2 +
+        style.WindowPadding.y * 2;
 
+    render.reshape(0, sliderHeight, windowWidth, windowHeight - sliderHeight);
+}
 static void reshape(GLFWwindow*, int w, int h) {
-    //todo: finish this
-    //render.reshape(w, h);
+    reshapeScene(w, h);
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
@@ -47,21 +62,13 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(COMMA)) {
         file.prevFrame();
-        const auto& textureId = render.shaders.video.videoTextureId;
-        updateTexture(textureId, file);
+        updateTexture(render.frame[0].textureId, file);
+        updateTexture(render.frame[1].textureId, file);
     }
     else if (key.is(PERIOD)) {
         file.nextFrame();
-        const auto& textureId = render.shaders.video.videoTextureId;
-        updateTexture(textureId, file);
-
-        /*using namespace std::chrono;
-        auto t0 = high_resolution_clock::now();
-        auto t1 = high_resolution_clock::now();
-        auto t2 = high_resolution_clock::now();
-        auto delta1 = std::chrono::duration_cast<milliseconds>(t1 - t0);
-        auto delta2 = std::chrono::duration_cast<milliseconds>(t2 - t1);
-        std::cout << "delta1=" << delta1 << " delta2=" << delta2 << std::endl;*/
+        updateTexture(render.frame[0].textureId, file);
+        updateTexture(render.frame[1].textureId, file);
     }
 }
 static void mouseCallback(ui::mouse::MouseEvent event) {
@@ -69,23 +76,41 @@ static void mouseCallback(ui::mouse::MouseEvent event) {
     using namespace ui::mouse;
     if (event.is(Action::MOVE, Button::LEFT)) {
         auto delta = event.getDelta();
-        render.mesh.move(delta.x, -delta.y);
+        render.move(delta);
+    }
+    else if (event.is(Action::MOVE, Button::NO)) {
+        auto cursor = event.getCursor();
+        render.select(cursor);
     }
 }
 static void mouseClick(GLFWwindow*, int button, int action, int mods) {
+
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        return;
+    }
+
     auto event = ui::mouse::click(button, action, mods);
     mouseCallback(event);
 }
-static void mouseMove(GLFWwindow*, double x, double y) {
+static void mouseMove(GLFWwindow* w, double x, double y) {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        return;
+    }
+
     auto mx = static_cast<int>(x);
-    auto my = static_cast<int>(y);
+    auto my = static_cast<int>(view.windowHeight - y);
     auto event = ui::mouse::move(mx, my);
     mouseCallback(event);
 }
 static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
-    float value = yoffset * 0.1;
-    render.mesh.zoom(value);
-    //std::cout << render.mesh.scale.x << std::endl;
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        return;
+    }
+
+    render.zoom(yoffset);
 }
 
 int main() {
@@ -93,9 +118,9 @@ int main() {
         std::cout << "glfwInit error" << std::endl;
         return -1;
     }
-    
-    constexpr int windowWidth = 800;
-    constexpr int windowHeight = 600;
+
+    int windowWidth = 1000;
+    int windowHeight = 600;
     GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Frames", nullptr, nullptr);
     if (!window) {
         std::cout << "glfwCreateWindow error" << std::endl;
@@ -136,6 +161,7 @@ int main() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
+
     const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
     if (!file.openFile(fileName)) {
         std::cout << "File open - error" << std::endl;
@@ -170,17 +196,17 @@ int main() {
             GL_UNSIGNED_BYTE,		// Source data type
             file.pixelsRGB);        // Source data pointer
         glBindTexture(GL_TEXTURE_2D, 0);
-        render.shaders.video.videoTextureId = videoTextureId;
-        render.mesh.setSize(file.pixelsWidth, file.pixelsHeight);
-    }
+        
+        render.frame[0].textureId = videoTextureId;
+        render.frame[0].mesh.setSize(file.pixelsWidth, file.pixelsHeight);
 
+        render.frame[1].textureId = videoTextureId;
+        render.frame[1].mesh.setSize(file.pixelsWidth, file.pixelsHeight);
+    }
 
     const auto& style = ImGui::GetStyle();
     const auto sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
-
-
-
-    render.camera.reshape(0, sliderHeight, windowWidth, windowHeight - sliderHeight);
+    reshapeScene(windowWidth, windowHeight);
     render.loadResources();
     render.initResources();
 
@@ -204,13 +230,15 @@ int main() {
 
             static float progress = 0.1f;
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
-            ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::SliderFloat("##slider", &progress, 0.0f, 1.0f, "%.3f", flags);
+            //ImGui::PushItemWidth(-FLT_MIN);
+            ImGui::PushItemWidth(500 - style.WindowPadding.y * 1.5f);
+            ImGui::SliderFloat("##slider1", &progress, 0.0f, 1.0f, "%.3f", flags);
+            ImGui::SameLine();
+            ImGui::SliderFloat("##slider2", &progress, 0.0f, 1.0f, "%.3f", flags);
             ImGui::PopItemWidth();
         }        
         ImGui::End();
         ImGui::PopStyleVar();
-
         //ImGui::ShowDemoWindow();
 
         glClearColor(0.2f, 0.2f, 0.3f, 1.0f);

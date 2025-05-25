@@ -2,10 +2,11 @@
 #include <glm/glm.hpp>
 
 struct ViewPort {
-    int x = 0;
-    int y = 0;
+    int left = 0;
+    int bottom = 0;
     int width = 0;
     int height = 0;
+    bool hit(int x, int y) const;
 };
 
 struct Camera {

@@ -3,6 +3,16 @@
 #include <glad/glad.h>
 #include "camera.h"
 
+bool ViewPort::hit(int x, int y) const {
+    if (x < left || left + width < x) {
+        return false;
+    }
+    if (y < bottom || bottom + height < y) {
+        return false;
+    }
+    return true;
+}
+
 void Camera::reshape(int x, int y, int w, int h) {
     w = std::clamp(w, 0, 4096);
     h = std::clamp(h, 0, 4096);

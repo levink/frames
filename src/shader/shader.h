@@ -5,9 +5,8 @@
 
 class VideoShader : public Shader {
 public:
-    GLuint videoTextureId = 0;
     VideoShader();
     void enable() const override;
     void disable() const override;
-    void draw(const Camera& camera, const Mesh& mesh);
+    void draw(const Camera& camera, const Mesh& mesh, GLuint textureId);
 };
