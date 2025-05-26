@@ -10,16 +10,17 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-struct View {
+struct Scene {
     int windowWidth = 0;
     int windowHeight = 0;
 };
 
-View view;
+Scene scene;
 Render render;
-FileReader file;
+VideoReader reader;
+Image image;
 
-static void updateTexture(GLuint textureId, const FileReader& reader) {
+static void updateTexture(GLuint textureId, const Image& image) {
     //todo: 
     // 1. glTexSubImage2D is probably better for update than glTexImage2D
     // 2. or use PBO for streaming
@@ -27,17 +28,17 @@ static void updateTexture(GLuint textureId, const FileReader& reader) {
     glTexImage2D(GL_TEXTURE_2D, // Target
         0,						// Mip-level
         GL_RGBA,			    // Texture format
-        reader.pixelsWidth,     // Texture width
-        reader.pixelsHeight,    // Texture height
+        image.width,            // Texture width
+        image.height,           // Texture height
         0,						// Border width
         GL_RGB,			        // Source format
         GL_UNSIGNED_BYTE,		// Source data type
-        reader.pixelsRGB);      // Source data pointer
+        image.pixels);          // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 static void reshapeScene(int windowWidth, int windowHeight) {
-    view.windowWidth = windowWidth;
-    view.windowHeight = windowHeight;
+    scene.windowWidth = windowWidth;
+    scene.windowHeight = windowHeight;
     const auto& style = ImGui::GetStyle();
     const auto sliderHeight =
         ImGui::GetFontSize() +
@@ -61,14 +62,14 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(COMMA)) {
-        file.prevFrame();
-        updateTexture(render.frame[0].textureId, file);
-        updateTexture(render.frame[1].textureId, file);
+        reader.prevFrame(image.pts - 1, image);
+        updateTexture(render.frame[0].textureId, image);
+        updateTexture(render.frame[1].textureId, image);
     }
     else if (key.is(PERIOD)) {
-        file.nextFrame();
-        updateTexture(render.frame[0].textureId, file);
-        updateTexture(render.frame[1].textureId, file);
+        reader.nextFrame(image);
+        updateTexture(render.frame[0].textureId, image);
+        updateTexture(render.frame[1].textureId, image);
     }
 }
 static void mouseCallback(ui::mouse::MouseEvent event) {
@@ -100,7 +101,7 @@ static void mouseMove(GLFWwindow* w, double x, double y) {
     }
 
     auto mx = static_cast<int>(x);
-    auto my = static_cast<int>(view.windowHeight - y);
+    auto my = static_cast<int>(scene.windowHeight - y);
     auto event = ui::mouse::move(mx, my);
     mouseCallback(event);
 }
@@ -163,11 +164,14 @@ int main() {
 
 
     const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
-    if (!file.openFile(fileName)) {
+    if (!reader.openFile(fileName)) {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
-    if (!file.nextFrame()) {
+    
+    image.allocate(reader.decoderContext->width, reader.decoderContext->height);
+
+    if (!reader.nextFrame(image)) {
         std::cout << "File read - error" << std::endl;
         return -1;
     }
@@ -189,19 +193,19 @@ int main() {
         glTexImage2D(GL_TEXTURE_2D, // Target
             0,						// Mip-level
             GL_RGBA,			    // Texture format
-            file.pixelsWidth,       // Texture width
-            file.pixelsHeight,		// Texture height
+            image.width,            // Texture width
+            image.height,		    // Texture height
             0,						// Border width
             GL_RGB,			        // Source format
             GL_UNSIGNED_BYTE,		// Source data type
-            file.pixelsRGB);        // Source data pointer
+            image.pixels);          // Source data pointer
         glBindTexture(GL_TEXTURE_2D, 0);
         
         render.frame[0].textureId = videoTextureId;
-        render.frame[0].mesh.setSize(file.pixelsWidth, file.pixelsHeight);
+        render.frame[0].mesh.setSize(image.width, image.height);
 
         render.frame[1].textureId = videoTextureId;
-        render.frame[1].mesh.setSize(file.pixelsWidth, file.pixelsHeight);
+        render.frame[1].mesh.setSize(image.width, image.height);
     }
 
     const auto& style = ImGui::GetStyle();

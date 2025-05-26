@@ -1,31 +1,36 @@
 #pragma once 
-
 #include "ffmpeg.h"
+#include "image.h"
 
-struct FileReader {
+struct RGBConverter {
+    SwsContext* swsContext = nullptr;
+    uint8_t* destFrame[AV_NUM_DATA_POINTERS] = { nullptr };
+    int destLineSize[AV_NUM_DATA_POINTERS] = { 0 };
+
+    bool createContext(const AVCodecContext* decoder);
+    void destroyContext();
+    int toRGB(const AVFrame* frame, Image& result);
+};
+
+struct VideoReader {
     AVFormatContext* formatContext = nullptr;
     AVCodecContext* decoderContext = nullptr;
-    SwsContext* swsContext = nullptr;
     const AVCodec* decoder = nullptr;
     int videoStreamIndex = -1;
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
-    int64_t framePTS = 0;
-    int64_t frameDuration = 0;
-    uint8_t* pixelsRGB = nullptr;
-    int pixelsWidth = 0;
-    int pixelsHeight = 0;
+    RGBConverter converter;
 
-    FileReader();
-    ~FileReader();
+    VideoReader();
+    ~VideoReader();
 
     bool openFile(const char* fileName);
-    bool nextFrame();
-    bool prevFrame();
+    bool nextFrame(Image& result);
+    bool prevFrame(int64_t pts, Image& result);
 
 private:
     bool readFrame() const;
-    void processFrame(const AVFrame* frame);
+    bool toRGB(const AVFrame* frame, Image& result);
 };
 
 

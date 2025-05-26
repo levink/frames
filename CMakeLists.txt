@@ -22,10 +22,11 @@ add_executable(app
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
 	src/ui/ui.cpp
+	src/video/image.cpp
 	src/video/video.cpp
 	src/main.cpp
 	src/render.cpp
- )
+)
 
 target_precompile_headers(app PRIVATE ${PROJECT_SOURCE_DIR}/src/video/ffmpeg.h)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)

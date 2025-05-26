@@ -1,29 +1,55 @@
 #include "video.h"
 #include <iostream>
 
+bool RGBConverter::createContext(const AVCodecContext* decoder) {
+    const auto& width = decoder->width;
+    const auto& height = decoder->height;
+    const auto& pixFmt = decoder->pix_fmt;
+
+    swsContext = sws_getContext(
+        width, height, pixFmt,
+        width, height, AV_PIX_FMT_RGB24,
+        SwsFlags::SWS_BILINEAR, nullptr, nullptr, nullptr);
+    
+    return swsContext;
+}
+void RGBConverter::destroyContext() {
+    if (swsContext) {
+        sws_freeContext(swsContext);
+        swsContext = nullptr;
+    }
+}
+int RGBConverter::toRGB(const AVFrame* frame, Image& result) {
+    destFrame[0] = result.pixels;
+    destLineSize[0] = 3 * frame->width;
+    int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
+    destFrame[0] = nullptr;
+    destLineSize[0] = 0;
+    return ret;
+}
+
 static int64_t getFramePTS(const AVFrame* frame) {
     if (frame == nullptr) {
         return 0;
     }
 
-    return frame->best_effort_timestamp == AV_NOPTS_VALUE ?
-        frame->pts :
-        frame->best_effort_timestamp;
+    if (frame->best_effort_timestamp == AV_NOPTS_VALUE) {
+        return frame->pts;
+    }
+
+    return frame->best_effort_timestamp;
 }
 
-FileReader::FileReader() {
+VideoReader::VideoReader() {
     av_log_set_level(AV_LOG_FATAL);
 }
 
-FileReader::~FileReader() {
+VideoReader::~VideoReader() {
     if (formatContext) {
         avformat_close_input(&formatContext);
     }
     if (decoderContext) {
         avcodec_free_context(&decoderContext);
-    }
-    if (swsContext) {
-        sws_freeContext(swsContext);
     }
     if (packet) {
         av_packet_free(&packet);
@@ -32,11 +58,10 @@ FileReader::~FileReader() {
         av_frame_unref(frame);
         av_frame_free(&frame);
     }
-
-    delete[] pixelsRGB;
+    converter.destroyContext();
 }
 
-bool FileReader::openFile(const char* fileName) {
+bool VideoReader::openFile(const char* fileName) {
 
     if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
         return false;// OpenFileResult::FileBadOpen;
@@ -75,37 +100,29 @@ bool FileReader::openFile(const char* fileName) {
         return false;// OpenFileResult::FrameBadAlloc;
     }
 
-    const auto& width = decoderContext->width;
-    const auto& height = decoderContext->height;
-    pixelsRGB = new uint8_t[width * height * 3];
-    pixelsWidth = width;
-    pixelsHeight = height;
-    swsContext = sws_getContext(
-        width, height, decoderContext->pix_fmt,
-        width, height, AV_PIX_FMT_RGB24,
-        SwsFlags::SWS_BILINEAR, nullptr, nullptr, nullptr);
-    if (swsContext == nullptr) {
+    if (converter.createContext(decoderContext) == false) {
         return false;// OpenFileResult::SwsContextBadAlloc;
     }
 
     return true;// OpenFileResult::Ok;
 }
 
-bool FileReader::nextFrame() {
+bool VideoReader::nextFrame(Image& result) {
     if (readFrame()) {
-        processFrame(frame);
+        bool ok = toRGB(frame, result);
         av_frame_unref(frame);
         av_packet_unref(packet);
-        return true;
+        return ok;
     }
 
     std::cout << "Finished" << std::endl;
     return false;
 }
 
-bool FileReader::prevFrame() {
-    //std::cout << "seek to pts = " << framePTS - 1 << std::endl;
-    int seek_res = av_seek_frame(formatContext, videoStreamIndex, framePTS - 1, AVSEEK_FLAG_BACKWARD);
+bool VideoReader::prevFrame(int64_t pts, Image& result) {
+    //todo: case for (pts < 0) ?
+
+    int seek_res = av_seek_frame(formatContext, videoStreamIndex, pts, AVSEEK_FLAG_BACKWARD);
     if (seek_res < 0) {
         return false;
     }
@@ -113,9 +130,9 @@ bool FileReader::prevFrame() {
 
     bool frameFound = false;
     while (readFrame()) {
-        int64_t pts = getFramePTS(frame);
-        int64_t dur = frame->duration;
-        if (pts + dur < framePTS) {
+        int64_t framePts = getFramePTS(frame);
+        int64_t frameDur = frame->duration;
+        if (framePts + frameDur < pts) {
             av_frame_unref(frame);
             av_packet_unref(packet);
             continue;
@@ -126,14 +143,16 @@ bool FileReader::prevFrame() {
     }
 
     if (frameFound) {
-        processFrame(frame);
+        bool ok = toRGB(frame, result);
         av_frame_unref(frame);
         av_packet_unref(packet);
+        return ok;
     }
-    return frameFound;
+
+    return false;
 }
 
-bool FileReader::readFrame() const {
+bool VideoReader::readFrame() const {
     while (true) {
         int ret = av_read_frame(formatContext, packet);
         if (ret < 0) {
@@ -165,20 +184,21 @@ bool FileReader::readFrame() const {
     return true;
 }
 
-void FileReader::processFrame(const AVFrame* frame) {
-    static uint8_t* destFrame[AV_NUM_DATA_POINTERS] = { nullptr };
-    static int destLineSize[AV_NUM_DATA_POINTERS] = { 0 };
-
-    // Get RGB
-    destFrame[0] = pixelsRGB;
-    destLineSize[0] = 3 * frame->width;
-    int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
-    if (ret < 0) {
-        std::cout << "processFrame: sws_scale() return " << ret << std::endl;
+bool VideoReader::toRGB(const AVFrame* frame, Image& result) {
+    
+    bool sameSize = result.checkSize(frame->width, frame->height);
+    if (!sameSize) {
+        std::cout << "toRGB(). Bad image size" << std::endl;
+        return false;
     }
 
-    // Get frame info
-    framePTS = getFramePTS(frame);
-    frameDuration = frame->duration;
-    //std::cout << "pts = " << framePTS << " " << av_get_picture_type_char(frame->pict_type) << std::endl;
+    int ret = converter.toRGB(frame, result);
+    if (ret < 0) {
+        std::cout << "toRGB(). Bad convert, ret = " << ret << std::endl;
+        return false;
+    }
+
+    result.pts = getFramePTS(frame);
+    result.duration = frame->duration;
+    return true;
 }
