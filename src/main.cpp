@@ -2,6 +2,8 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <chrono>
+#include <thread>
+#include <functional>
 #include "image/lodepng.h"
 #include "ui/ui.h"
 #include "video/video.h"
@@ -10,16 +12,65 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-struct Scene {
+
+struct SceneSize {
+    
+    /* Main window */
     int windowWidth = 0;
     int windowHeight = 0;
+    int windowPadding = 4;
+    int sliderHeight = 0;
+
+    /* Render */
+    int left = 0;
+    int bottom = 0;
+    int width = 0;
+    int height = 0;
+    
+    void reshape(int w, int h) {
+        windowWidth = w;
+        windowHeight = h;
+
+        const ImGuiStyle& style = ImGui::GetStyle();
+        sliderHeight = ImGui::GetFontSize() +
+            style.FramePadding.y * 2 +
+            style.WindowPadding.y * 2;
+
+        left = 0;
+        bottom = sliderHeight;
+        width = windowWidth;
+        height = windowHeight - sliderHeight;
+    }
 };
 
-Scene scene;
+SceneSize scene;
 Render render;
 VideoReader reader;
 Image image;
 
+static GLuint createTexture(Image& image) {
+
+    GLuint videoTextureId = 0;
+    glGenTextures(1, &videoTextureId);
+    glBindTexture(GL_TEXTURE_2D, videoTextureId);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, // Target
+        0,						// Mip-level
+        GL_RGBA,			    // Texture format
+        image.width,            // Texture width
+        image.height,		    // Texture height
+        0,						// Border width
+        GL_RGB,			        // Source format
+        GL_UNSIGNED_BYTE,		// Source data type
+        image.pixels);          // Source data pointer
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    return videoTextureId;
+}
 static void updateTexture(GLuint textureId, const Image& image) {
     //todo: 
     // 1. glTexSubImage2D is probably better for update than glTexImage2D
@@ -36,19 +87,9 @@ static void updateTexture(GLuint textureId, const Image& image) {
         image.pixels);          // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
 }
-static void reshapeScene(int windowWidth, int windowHeight) {
-    scene.windowWidth = windowWidth;
-    scene.windowHeight = windowHeight;
-    const auto& style = ImGui::GetStyle();
-    const auto sliderHeight =
-        ImGui::GetFontSize() +
-        style.FramePadding.y * 2 +
-        style.WindowPadding.y * 2;
-
-    render.reshape(0, sliderHeight, windowWidth, windowHeight - sliderHeight);
-}
 static void reshape(GLFWwindow*, int w, int h) {
-    reshapeScene(w, h);
+    scene.reshape(w, h);
+    render.reshape(scene.left, scene.bottom, scene.width, scene.height);
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
@@ -113,8 +154,66 @@ static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
 
     render.zoom(yoffset);
 }
+static bool loadGLES(GLFWwindow* window) {
+    glfwMakeContextCurrent(window);
+    if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
+        std::cout << "Failed to load GLES2" << std::endl;
+        return false;
+    }
+    
+    printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
+    return true;
+}
+static void initWindow(GLFWwindow* window) {
+    glfwWindowHint(GLFW_DEPTH_BITS, 16);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
+    glfwSetFramebufferSizeCallback(window, reshape);
+    glfwSetKeyCallback(window, keyCallback);
+    glfwSetMouseButtonCallback(window, mouseClick);
+    glfwSetCursorPosCallback(window, mouseMove);
+    glfwSetScrollCallback(window, mouseScroll);
+    glfwSwapInterval(1);
+    glfwSetTime(0.0);
+}
+static void initImGui(GLFWwindow* window) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
+    ImGui_ImplOpenGL3_Init();
+
+    // Pre-render step, for creating fonts & styles
+    auto windowPadding = ImVec2(scene.windowPadding, scene.windowPadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, windowPadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+std::atomic<bool> eventLoopStop = false;
+static void eventLoop() {
+    using std::this_thread::sleep_for;
+    using std::chrono::seconds;
+
+    eventLoopStop.store(false);
+    while (!eventLoopStop.load()) {
+        sleep_for(seconds(1));
+        std::cout << "tick" << std::endl;
+    }
+    std::cout << "stopped" << std::endl;
+}
 
 int main() {
+
+    //std::thread t1 = std::thread([]() {
+    //    eventLoop();
+    //});
+    
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
         return -1;
@@ -128,40 +227,17 @@ int main() {
         glfwTerminate();
         return -1;
     }
-
-    glfwWindowHint(GLFW_DEPTH_BITS, 16);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
-    glfwMakeContextCurrent(window);
-    if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
-        std::cout << "Failed to init glad" << std::endl;
+    if (!loadGLES(window)) {
+        glfwTerminate();
         return -1;
     }
-    else {
-        printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
-    }
-    glfwSetFramebufferSizeCallback(window, reshape);
-    glfwSetKeyCallback(window, keyCallback);
-    glfwSetMouseButtonCallback(window, mouseClick);
-    glfwSetCursorPosCallback(window, mouseMove);
-    glfwSetScrollCallback(window, mouseScroll);
-    glfwSwapInterval(1);
-    glfwSetTime(0.0);
+    render.loadShaders();
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;   
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;       
-    ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
-    ImGui_ImplOpenGL3_Init();
+    initWindow(window);
+    initImGui(window);
 
-    // Pre-render step, for creating fonts & styles
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
+    scene.reshape(windowWidth, windowHeight);
+    render.reshape(scene.left, scene.bottom, scene.width, scene.height);
 
     const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
     if (!reader.openFile(fileName)) {
@@ -176,44 +252,14 @@ int main() {
         return -1;
     }
 
-    {
-        /*std::vector<uint8_t> pixels;
-        unsigned width = 0;
-        unsigned height = 0;
-        auto err = lodepng::decode(pixels, width, height, "../../data/img/cat.png", LodePNGColorType::LCT_RGBA);*/
+    GLuint textureId = createTexture(image);
+    render.frame[0].textureId = textureId;
+    render.frame[0].mesh.setSize(image.width, image.height);
 
-        GLuint videoTextureId = 0;
-        glGenTextures(1, &videoTextureId);
-        glBindTexture(GL_TEXTURE_2D, videoTextureId);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, // Target
-            0,						// Mip-level
-            GL_RGBA,			    // Texture format
-            image.width,            // Texture width
-            image.height,		    // Texture height
-            0,						// Border width
-            GL_RGB,			        // Source format
-            GL_UNSIGNED_BYTE,		// Source data type
-            image.pixels);          // Source data pointer
-        glBindTexture(GL_TEXTURE_2D, 0);
-        
-        render.frame[0].textureId = videoTextureId;
-        render.frame[0].mesh.setSize(image.width, image.height);
-
-        render.frame[1].textureId = videoTextureId;
-        render.frame[1].mesh.setSize(image.width, image.height);
-    }
+    render.frame[1].textureId = textureId;
+    render.frame[1].mesh.setSize(image.width, image.height);
 
     const auto& style = ImGui::GetStyle();
-    const auto sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
-    reshapeScene(windowWidth, windowHeight);
-    render.loadResources();
-    render.initResources();
-
     while (!glfwWindowShouldClose(window)) {
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -221,31 +267,30 @@ int main() {
         ImGui::NewFrame();
 
         const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-        const auto& workPos = main_viewport->WorkPos;
         const auto& workSize = main_viewport->WorkSize;
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-        ImGui::SetNextWindowPos(ImVec2(workPos.x, workSize.y - sliderHeight), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(workSize.x, 0), ImGuiCond_Always);
-        if (ImGui::Begin("SliderWindow", nullptr, 
+        ImGui::SetNextWindowPos(ImVec2(0, workSize.y - scene.sliderHeight), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(workSize.x, scene.sliderHeight), ImGuiCond_Always);
+        if (ImGui::Begin("SlidersWindow", nullptr, 
+            ImGuiWindowFlags_NoBackground |
             ImGuiWindowFlags_NoDecoration | 
             ImGuiWindowFlags_NoNavInputs | 
             ImGuiWindowFlags_NoNavFocus)) {
 
             static float progress = 0.1f;
+            float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
-            //ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::PushItemWidth(500 - style.WindowPadding.y * 1.5f);
+            ImGui::PushItemWidth(itemWidth);
             ImGui::SliderFloat("##slider1", &progress, 0.0f, 1.0f, "%.3f", flags);
-            ImGui::SameLine();
+            ImGui::SameLine(0.f, style.WindowPadding.x);
             ImGui::SliderFloat("##slider2", &progress, 0.0f, 1.0f, "%.3f", flags);
             ImGui::PopItemWidth();
         }        
         ImGui::End();
-        ImGui::PopStyleVar();
+       
+        
         //ImGui::ShowDemoWindow();
 
-        glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
+        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         render.draw();
         ImGui::Render();
@@ -256,7 +301,10 @@ int main() {
         glfwPollEvents();
     }
 
+    /*eventLoopStop.store(true);
+    t1.join();*/
     
+    ImGui::PopStyleVar(2);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

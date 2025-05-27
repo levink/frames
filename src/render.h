@@ -19,8 +19,7 @@ struct Render {
 	VideoFrame frame[2];
 	int selected = -1;
 
-	void loadResources();
-	void initResources();
+	void loadShaders();
 	void reloadShaders();
 	void reshape(int x, int y, int w, int h);
 	void draw();

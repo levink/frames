@@ -1,24 +1,23 @@
 #include "render.h"
 #include <iostream>
 
-void Render::loadResources() {
-	shaders.videoSource.load(shader_path::video);
-}
-void Render::initResources() {
-	shaders.video.create(shaders.videoSource);
-}
 static void reloadShader(const char* path, ShaderSource& cache, Shader& shader) {
 	cache.load(path);
 	shader.destroy();
 	shader.create(cache);
 }
+void Render::loadShaders() {
+	shaders.videoSource.load(shader_path::video);
+	shaders.video.create(shaders.videoSource);
+}
 void Render::reloadShaders() {
 	reloadShader(shader_path::video, shaders.videoSource, shaders.video);
 }
 void Render::reshape(int x, int y, int w, int h) {
-	int width = 0.5f * w;
-	frame[0].cam.reshape(x, y, width, h);
-	frame[1].cam.reshape(x + width, y, w - width, h);
+	const int width = 0.5f * w;
+	const int padding = 0;
+	frame[0].cam.reshape(x, y, width - padding, h);
+	frame[1].cam.reshape(x + width + padding, y, w - width - padding, h);
 }
 void Render::draw() {
 	shaders.video.enable();
