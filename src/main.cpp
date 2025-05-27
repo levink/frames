@@ -72,24 +72,25 @@ static GLuint createTexture(Image& image) {
     return videoTextureId;
 }
 static void updateTexture(GLuint textureId, const Image& image) {
-    //todo: 
-    // 1. glTexSubImage2D is probably better for update than glTexImage2D
-    // 2. or use PBO for streaming
+    //todo: Probably better to use PBO for streaming data
     glBindTexture(GL_TEXTURE_2D, textureId);
-    glTexImage2D(GL_TEXTURE_2D, // Target
+    glTexSubImage2D(GL_TEXTURE_2D, // Target
         0,						// Mip-level
-        GL_RGBA,			    // Texture format
+        0,                      // X-offset
+        0,                      // Y-offset
         image.width,            // Texture width
         image.height,           // Texture height
-        0,						// Border width
         GL_RGB,			        // Source format
         GL_UNSIGNED_BYTE,		// Source data type
         image.pixels);          // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
 }
-static void reshape(GLFWwindow*, int w, int h) {
+static void reshapeScene(int w, int h) {
     scene.reshape(w, h);
     render.reshape(scene.left, scene.bottom, scene.width, scene.height);
+}
+static void reshape(GLFWwindow*, int w, int h) {
+    reshapeScene(w, h);
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
@@ -235,9 +236,7 @@ int main() {
 
     initWindow(window);
     initImGui(window);
-
-    scene.reshape(windowWidth, windowHeight);
-    render.reshape(scene.left, scene.bottom, scene.width, scene.height);
+    reshapeScene(windowWidth, windowHeight);
 
     const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
     if (!reader.openFile(fileName)) {
@@ -286,8 +285,6 @@ int main() {
             ImGui::PopItemWidth();
         }        
         ImGui::End();
-       
-        
         //ImGui::ShowDemoWindow();
 
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
