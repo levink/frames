@@ -19,9 +19,9 @@ void Mesh::setSize(int w, int h) {
         { 2, 3, 0 }
     };
 
-    offset = { 0, 0, 0 };
+    offset = { -w/2, -h/2, 0 };
     scale = { 1, 1, 1 };
-    modelMatrix = glm::mat4(1);
+    updateMatrix();
 }
 
 void Mesh::updateMatrix() {

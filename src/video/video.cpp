@@ -19,7 +19,7 @@ void RGBConverter::destroyContext() {
         swsContext = nullptr;
     }
 }
-int RGBConverter::toRGB(const AVFrame* frame, Image& result) {
+int RGBConverter::toRGB(const AVFrame* frame, RGBFrame& result) {
     destFrame[0] = result.pixels;
     destLineSize[0] = 3 * frame->width;
     int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
@@ -107,7 +107,7 @@ bool VideoReader::openFile(const char* fileName) {
     return true;// OpenFileResult::Ok;
 }
 
-bool VideoReader::nextFrame(Image& result) {
+bool VideoReader::nextFrame(RGBFrame& result) {
     if (readFrame()) {
         bool ok = toRGB(frame, result);
         av_frame_unref(frame);
@@ -115,11 +115,11 @@ bool VideoReader::nextFrame(Image& result) {
         return ok;
     }
 
-    std::cout << "Finished" << std::endl;
+    std::cout << "readFrame() finished" << std::endl;
     return false;
 }
 
-bool VideoReader::prevFrame(int64_t pts, Image& result) {
+bool VideoReader::prevFrame(int64_t pts, RGBFrame& result) {
     //todo: case for (pts < 0) ?
 
     int seek_res = av_seek_frame(formatContext, videoStreamIndex, pts, AVSEEK_FLAG_BACKWARD);
@@ -184,7 +184,7 @@ bool VideoReader::readFrame() const {
     return true;
 }
 
-bool VideoReader::toRGB(const AVFrame* frame, Image& result) {
+bool VideoReader::toRGB(const AVFrame* frame, RGBFrame& result) {
     
     bool sameSize = result.checkSize(frame->width, frame->height);
     if (!sameSize) {

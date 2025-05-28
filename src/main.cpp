@@ -4,6 +4,9 @@
 #include <chrono>
 #include <thread>
 #include <functional>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
 #include "image/lodepng.h"
 #include "ui/ui.h"
 #include "video/video.h"
@@ -46,9 +49,8 @@ struct SceneSize {
 SceneSize scene;
 Render render;
 VideoReader reader;
-Image image;
 
-static GLuint createTexture(Image& image) {
+static GLuint createTexture(int width, int height) {
 
     GLuint videoTextureId = 0;
     glGenTextures(1, &videoTextureId);
@@ -61,28 +63,28 @@ static GLuint createTexture(Image& image) {
     glTexImage2D(GL_TEXTURE_2D, // Target
         0,						// Mip-level
         GL_RGBA,			    // Texture format
-        image.width,            // Texture width
-        image.height,		    // Texture height
+        width,                  // Texture width
+        height,		            // Texture height
         0,						// Border width
         GL_RGB,			        // Source format
         GL_UNSIGNED_BYTE,		// Source data type
-        image.pixels);          // Source data pointer
+        nullptr);               // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
     
     return videoTextureId;
 }
-static void updateTexture(GLuint textureId, const Image& image) {
+static void updateTexture(GLuint textureId, const RGBFrame& frame) {
     //todo: Probably better to use PBO for streaming data
     glBindTexture(GL_TEXTURE_2D, textureId);
     glTexSubImage2D(GL_TEXTURE_2D, // Target
         0,						// Mip-level
         0,                      // X-offset
         0,                      // Y-offset
-        image.width,            // Texture width
-        image.height,           // Texture height
+        frame.width,            // Texture width
+        frame.height,           // Texture height
         GL_RGB,			        // Source format
         GL_UNSIGNED_BYTE,		// Source data type
-        image.pixels);          // Source data pointer
+        frame.pixels);          // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 static void reshapeScene(int w, int h) {
@@ -104,14 +106,14 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(COMMA)) {
-        reader.prevFrame(image.pts - 1, image);
-        updateTexture(render.frame[0].textureId, image);
-        updateTexture(render.frame[1].textureId, image);
+        //reader.prevFrame(frameRGB.pts - 1, frameRGB);
+       /* updateTexture(render.frame[0].textureId, frameRGB);
+        updateTexture(render.frame[1].textureId, frameRGB);*/
     }
     else if (key.is(PERIOD)) {
-        reader.nextFrame(image);
-        updateTexture(render.frame[0].textureId, image);
-        updateTexture(render.frame[1].textureId, image);
+        //reader.nextFrame(frameRGB);
+        /*updateTexture(render.frame[0].textureId, frameRGB);
+        updateTexture(render.frame[1].textureId, frameRGB);*/
     }
 }
 static void mouseCallback(ui::mouse::MouseEvent event) {
@@ -167,13 +169,13 @@ static bool loadGLES(GLFWwindow* window) {
 }
 static void initWindow(GLFWwindow* window) {
     glfwWindowHint(GLFW_DEPTH_BITS, 16);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
     glfwSetFramebufferSizeCallback(window, reshape);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetMouseButtonCallback(window, mouseClick);
     glfwSetCursorPosCallback(window, mouseMove);
     glfwSetScrollCallback(window, mouseScroll);
-    glfwSwapInterval(1);
+    //glfwSwapInterval(1);
     glfwSetTime(0.0);
 }
 static void initImGui(GLFWwindow* window) {
@@ -185,36 +187,181 @@ static void initImGui(GLFWwindow* window) {
     ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
-    // Pre-render step, for creating fonts & styles
-    auto windowPadding = ImVec2(scene.windowPadding, scene.windowPadding);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, windowPadding);
+    //Default style
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(scene.windowPadding, scene.windowPadding));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+
+    // Pre-render step, for creating fonts & styles
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
-
-std::atomic<bool> eventLoopStop = false;
-static void eventLoop() {
-    using std::this_thread::sleep_for;
-    using std::chrono::seconds;
-
-    eventLoopStop.store(false);
-    while (!eventLoopStop.load()) {
-        sleep_for(seconds(1));
-        std::cout << "tick" << std::endl;
-    }
-    std::cout << "stopped" << std::endl;
+static void destroyImGui() {
+    ImGui::PopStyleVar(2);
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 }
+
+
+struct FrameProvider {
+    std::mutex mtx;
+    std::vector<RGBFrame*> items;
+    int frameWidth = 0;
+    int frameHeight = 0;
+
+    ~FrameProvider() {
+        for (auto& item : items) {
+            delete item;
+        }
+    }
+
+    void setFrameSize(int width, int height) {
+        auto lock = std::lock_guard(mtx);
+        this->frameWidth = width;
+        this->frameHeight = height;
+    }
+
+    void reserveFrames(size_t frameCount) {
+        auto lock = std::lock_guard(mtx);
+        size_t currentSize = items.size();
+        items.reserve(currentSize + frameCount);
+
+        for (int i = 0; i < frameCount; i++) {
+            items.emplace_back(new RGBFrame(frameWidth, frameHeight));
+        }
+    }
+
+    void put(RGBFrame* item) {
+        auto lock = std::lock_guard(mtx);
+        items.push_back(item);
+    }
+
+    RGBFrame* get() {
+        auto lock = std::lock_guard(mtx);
+        
+        if (items.empty()) {
+            return new RGBFrame(frameWidth, frameHeight);
+        }
+
+        auto last = items.back();
+        items.pop_back();
+
+        return last;
+    }
+};
+
+struct FrameChannel {
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::atomic<bool> closed = false;
+    RGBFrame* cached = nullptr;
+
+    ~FrameChannel() {
+        delete cached;
+    }
+
+    bool put(RGBFrame* newFrame) {
+        if (closed) {
+            return false;
+        }
+        
+        auto lock = std::unique_lock(mtx);
+        while (!closed && cached) {
+            cv.wait(lock);
+        }
+
+        if (closed) {
+            return false;
+        }
+
+        cached = newFrame;
+        return true;
+    }
+
+    RGBFrame* get() {
+        auto lock = std::lock_guard(mtx);
+        if (cached == nullptr) {
+            return nullptr;
+        }
+
+        RGBFrame* result = cached;
+        cached = nullptr;
+        cv.notify_one();
+        return result;
+    }
+
+    void close() {
+        auto lock = std::unique_lock(mtx);
+        closed.store(true);
+        cv.notify_all();
+    }
+};
+
+struct EventLoop {
+    std::thread t;
+    std::atomic<bool> finished = false;
+    std::atomic<bool> pause = false; //No need this flag here. During the pause do not get new frames from render
+    FrameProvider& from;
+    FrameChannel& to;
+    EventLoop(FrameProvider& from, FrameChannel& to) : from(from), to(to) { }
+    ~EventLoop() {
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+        
+    void start() {
+        finished.store(false);
+
+        t = std::thread([this]() {
+
+            while (!finished) {
+
+                if (pause) {
+                    // TODO: need sleep on CondVar? And wait for the next command?
+                    // Active waiting is bad solution
+                    return; //break?
+                }
+
+                RGBFrame* frame = from.get();
+                if (frame == nullptr) {
+                    continue;
+                }
+
+                bool ok = reader.nextFrame(*frame);
+                if (!ok) {
+                    from.put(frame);
+                    pause = true;
+                    continue;
+                }
+
+                bool sent = to.put(frame);
+                if (!sent) {
+                    from.put(frame);
+                    return;
+                }
+            }
+            std::cout << "stopped" << std::endl;
+        });
+    }
+    void stop() {
+        finished.store(true);
+        to.close();
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+};
 
 int main() {
 
-    //std::thread t1 = std::thread([]() {
-    //    eventLoop();
-    //});
-    
+    FrameProvider framePrivider;
+    FrameChannel readyFrames;
+    EventLoop eventLoop(framePrivider, readyFrames);
+
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
         return -1;
@@ -243,23 +390,59 @@ int main() {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
-    
-    image.allocate(reader.decoderContext->width, reader.decoderContext->height);
+    else {
+        int width = reader.decoderContext->width;
+        int height = reader.decoderContext->height;
+        
+        GLuint textureId = createTexture(width, height);
+        render.frame[0].textureId = textureId;
+        render.frame[0].mesh.setSize(width, height);
 
-    if (!reader.nextFrame(image)) {
-        std::cout << "File read - error" << std::endl;
-        return -1;
+        render.frame[1].textureId = textureId;
+        render.frame[1].mesh.setSize(width, height);
+
+        framePrivider.setFrameSize(width, height);
+        framePrivider.reserveFrames(3);
     }
 
-    GLuint textureId = createTexture(image);
-    render.frame[0].textureId = textureId;
-    render.frame[0].mesh.setSize(image.width, image.height);
+    eventLoop.start();
 
-    render.frame[1].textureId = textureId;
-    render.frame[1].mesh.setSize(image.width, image.height);
+    using std::chrono::steady_clock;
+    auto t1 = steady_clock::now();
+
+    auto fps_t1 = steady_clock::now();
+    auto fps_count = 0;
 
     const auto& style = ImGui::GetStyle();
     while (!glfwWindowShouldClose(window)) {
+        
+        {
+            using std::chrono::microseconds;
+            using std::chrono::duration_cast;
+            
+            auto t2 = steady_clock::now();
+            auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
+
+            if (durationMicros * 30 >= 1000000 ) { // 1 second / 30 fps
+                t1 = t2;
+                RGBFrame* frame = readyFrames.get();
+                if (frame) {
+                    updateTexture(render.frame[0].textureId, *frame);
+                    updateTexture(render.frame[1].textureId, *frame);
+                    framePrivider.put(frame);
+
+                    fps_count++;
+                    auto fps_t2 = steady_clock::now();
+                    auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
+                    if (dd > 1000000) {
+                        std::cout << fps_count << std::endl;
+                        fps_t1 = steady_clock::now();
+                        fps_count = 0;
+                    }
+                }
+            } 
+        }
+        
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -298,14 +481,9 @@ int main() {
         glfwPollEvents();
     }
 
-    /*eventLoopStop.store(true);
-    t1.join();*/
-    
-    ImGui::PopStyleVar(2);
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
 
+    eventLoop.stop();
+    destroyImGui();
     render.destroy();
     glfwTerminate();
 	return 0;

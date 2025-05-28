@@ -1,6 +1,6 @@
 #pragma once 
 #include "ffmpeg.h"
-#include "image.h"
+#include "frame.h"
 
 struct RGBConverter {
     SwsContext* swsContext = nullptr;
@@ -9,7 +9,7 @@ struct RGBConverter {
 
     bool createContext(const AVCodecContext* decoder);
     void destroyContext();
-    int toRGB(const AVFrame* frame, Image& result);
+    int toRGB(const AVFrame* frame, RGBFrame& result);
 };
 
 struct VideoReader {
@@ -25,12 +25,12 @@ struct VideoReader {
     ~VideoReader();
 
     bool openFile(const char* fileName);
-    bool nextFrame(Image& result);
-    bool prevFrame(int64_t pts, Image& result);
+    bool nextFrame(RGBFrame& result);
+    bool prevFrame(int64_t pts, RGBFrame& result);
 
 private:
     bool readFrame() const;
-    bool toRGB(const AVFrame* frame, Image& result);
+    bool toRGB(const AVFrame* frame, RGBFrame& result);
 };
 
 

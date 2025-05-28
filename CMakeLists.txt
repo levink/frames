@@ -11,6 +11,8 @@ add_subdirectory(lib/glad)
 add_subdirectory(lib/ffmpeg)
 add_subdirectory(lib/imgui)
 
+
+
 add_executable(app 
 	lib/imgui/backends/imgui_impl_glfw.cpp
     lib/imgui/backends/imgui_impl_opengl3.cpp
@@ -22,7 +24,7 @@ add_executable(app
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
 	src/ui/ui.cpp
-	src/video/image.cpp
+	src/video/frame.cpp
 	src/video/video.cpp
 	src/main.cpp
 	src/render.cpp
