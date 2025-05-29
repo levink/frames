@@ -305,14 +305,23 @@ void PlayLoop::stop() {
 }
 void PlayLoop::playback() {
 
+    int64_t lastPTS = 0; //todo: move to reader?
+
     while (!finished) {
 
         RGBFrame* frame = framePool.get();
-        bool ok = reader.nextFrame(*frame);
+
+        int dir = direction.load();
+        bool ok =
+            (dir > 0) ? reader.nextFrame(*frame) :
+            (dir < 0) ? reader.prevFrame(lastPTS - 1, *frame) :
+            false;
+        
         if (!ok) {
             framePool.put(frame);
             continue;
         }
+        lastPTS = frame->pts;
 
         bool sent = toChannel.put(frame); //<-- condvar::wait() here
         if (!sent) {

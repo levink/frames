@@ -29,9 +29,6 @@ struct SceneSize {
     int bottom = 0;
     int width = 0;
     int height = 0;
-
-    /* Playback */
-    bool paused = false;
     
     void reshape(int w, int h) {
         windowWidth = w;
@@ -49,9 +46,16 @@ struct SceneSize {
     }
 };
 
+struct Player {
+    bool paused = false;
+    int nextFrames = 0;
+};
+
 SceneSize scene;
 Render render;
 VideoReader reader;
+Player player;
+
 
 static GLuint createTexture(int width, int height) {
 
@@ -109,12 +113,17 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        scene.paused = !scene.paused;
+        player.paused = !player.paused;
     }
-    else if (key.is(COMMA)) {
-        //reader.prevFrame(frameRGB.pts - 1, frameRGB);
-       /* updateTexture(render.frame[0].textureId, frameRGB);
-        updateTexture(render.frame[1].textureId, frameRGB);*/
+    else if (key.is(LEFT)) {
+        if (player.paused) {
+            player.nextFrames--;
+        }
+    }
+    else if (key.is(RIGHT)) {
+        if (player.paused) {
+            player.nextFrames++;
+        }
     }
     else if (key.is(PERIOD)) {
         //reader.nextFrame(frameRGB);
@@ -212,13 +221,7 @@ static void destroyImGui() {
 }
 
 
-
 int main() {
-
-    FramePool framePool;
-    FrameChannel frameChannel;
-    PlayLoop playLoop(framePool, frameChannel, reader);
-
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
         return -1;
@@ -255,10 +258,13 @@ int main() {
     render.createFrame(0, textureId, fileWidth, fileHeight);
     render.createFrame(1, textureId, fileWidth, fileHeight);
 
+
+    FramePool framePool;
+    FrameChannel frameChannel;
+    PlayLoop playLoop(framePool, frameChannel, reader);
+    
     framePool.createFrames(3, fileWidth, fileHeight);
     playLoop.start();
-
-
 
     using namespace std::chrono_literals;
     using std::chrono::microseconds;
@@ -278,10 +284,47 @@ int main() {
             auto t2 = steady_clock::now();
             auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
 
+            if (player.paused) {
+                if (player.nextFrames > 0) {
+                    playLoop.direction.store(1);
+
+                    RGBFrame* frame = frameChannel.get();
+                    if (frame) {
+                        updateTexture(render.frame[0].textureId, *frame);
+                        updateTexture(render.frame[1].textureId, *frame);
+                        framePool.put(frame);
+
+                        int64_t pts = frame->pts;
+                        int64_t dur = videoInfo.duration;
+                        videoProgress = (pts * 100.f) / dur;
+
+                        player.nextFrames = 0;
+                    }
+                }
+                else if (player.nextFrames < 0) {
+                    playLoop.direction.store(-1);
+
+                    RGBFrame* frame = frameChannel.get();
+                    if (frame) {
+                        updateTexture(render.frame[0].textureId, *frame);
+                        updateTexture(render.frame[1].textureId, *frame);
+                        framePool.put(frame);
+
+                        int64_t pts = frame->pts;
+                        int64_t dur = videoInfo.duration;
+                        videoProgress = (pts * 100.f) / dur;
+
+                        player.nextFrames = 0;
+                    }
+                }
+
+                    
+            }
+            
             if (durationMicros * 30ms >= 1000000ms ) { // TODO: this code for 30 fps. Need more general solution
                 t1 = t2;
 
-                if (!scene.paused) {
+                if (!player.paused) {
                     RGBFrame* frame = frameChannel.get();
                     if (frame) {
                         //scene.paused = true;
@@ -295,14 +338,14 @@ int main() {
                     }
                 }
 
-                fps_count++;
+               /* fps_count++;
                 auto fps_t2 = steady_clock::now();
                 auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
                 if (dd > 1000000) {
                     std::cout << fps_count << std::endl;
                     fps_t1 = steady_clock::now();
                     fps_count = 0;
-                }
+                }*/
             } 
         }
 
@@ -329,7 +372,7 @@ int main() {
             ImGui::PushItemWidth(itemWidth);
             bool changed1 = ImGui::SliderFloat("##slider1", &videoProgress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::SameLine(0.f, style.WindowPadding.x);
-            bool changed2 = ImGui::SliderFloat("##slider2", &videoProgress, 0.0f, 100.0f, "%.2f", flags);
+            bool changed2 = ImGui::SliderFloat("##slider2", &videoProgress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::PopItemWidth();
 
             if (progress != progress_old) {

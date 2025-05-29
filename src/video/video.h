@@ -70,14 +70,14 @@ public:
     void close();
 };
 
-class PlayLoop {
+struct PlayLoop {
     std::thread t;
     std::atomic<bool> finished = false;
+    std::atomic<int> direction = 1;
     FramePool& framePool;
     FrameChannel& toChannel;
     VideoReader& reader;
 
-public:
     PlayLoop(FramePool& pool, FrameChannel& channel, VideoReader& reader);
     ~PlayLoop();
     void start();
