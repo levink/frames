@@ -28,4 +28,7 @@ struct Render {
 	void select(const glm::vec2& cursor);
 	void move(const glm::vec2& delta);
 	void zoom(float value);
+
+	void createFrame(size_t frameIndex, GLuint textureId, int imageWidth, int imageHeight);
+	void destroyFrame() { /*TODO: not implemented*/ }
 };

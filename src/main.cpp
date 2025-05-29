@@ -29,6 +29,9 @@ struct SceneSize {
     int bottom = 0;
     int width = 0;
     int height = 0;
+
+    /* Playback */
+    bool paused = false;
     
     void reshape(int w, int h) {
         windowWidth = w;
@@ -104,6 +107,9 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(R)) {
         std::cout << "Reload shaders" << std::endl;
         render.reloadShaders();
+    }
+    else if (key.is(SPACE)) {
+        scene.paused = !scene.paused;
     }
     else if (key.is(COMMA)) {
         //reader.prevFrame(frameRGB.pts - 1, frameRGB);
@@ -206,161 +212,12 @@ static void destroyImGui() {
 }
 
 
-struct FrameProvider {
-    std::mutex mtx;
-    std::vector<RGBFrame*> items;
-    int frameWidth = 0;
-    int frameHeight = 0;
-
-    ~FrameProvider() {
-        for (auto& item : items) {
-            delete item;
-        }
-    }
-
-    void setFrameSize(int width, int height) {
-        auto lock = std::lock_guard(mtx);
-        this->frameWidth = width;
-        this->frameHeight = height;
-    }
-
-    void reserveFrames(size_t frameCount) {
-        auto lock = std::lock_guard(mtx);
-        size_t currentSize = items.size();
-        items.reserve(currentSize + frameCount);
-
-        for (int i = 0; i < frameCount; i++) {
-            items.emplace_back(new RGBFrame(frameWidth, frameHeight));
-        }
-    }
-
-    void put(RGBFrame* item) {
-        auto lock = std::lock_guard(mtx);
-        items.push_back(item);
-    }
-
-    RGBFrame* get() {
-        auto lock = std::lock_guard(mtx);
-        
-        if (items.empty()) {
-            return new RGBFrame(frameWidth, frameHeight);
-        }
-
-        auto last = items.back();
-        items.pop_back();
-
-        return last;
-    }
-};
-
-struct FrameChannel {
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::atomic<bool> closed = false;
-    RGBFrame* cached = nullptr;
-
-    ~FrameChannel() {
-        delete cached;
-    }
-
-    bool put(RGBFrame* newFrame) {
-        if (closed) {
-            return false;
-        }
-        
-        auto lock = std::unique_lock(mtx);
-        while (!closed && cached) {
-            cv.wait(lock);
-        }
-
-        if (closed) {
-            return false;
-        }
-
-        cached = newFrame;
-        return true;
-    }
-
-    RGBFrame* get() {
-        auto lock = std::lock_guard(mtx);
-        if (cached == nullptr) {
-            return nullptr;
-        }
-
-        RGBFrame* result = cached;
-        cached = nullptr;
-        cv.notify_one();
-        return result;
-    }
-
-    void close() {
-        auto lock = std::unique_lock(mtx);
-        closed.store(true);
-        cv.notify_all();
-    }
-};
-
-struct EventLoop {
-    std::thread t;
-    std::atomic<bool> finished = false;
-    std::atomic<bool> pause = false; //No need this flag here. During the pause do not get new frames from render
-    FrameProvider& from;
-    FrameChannel& to;
-    EventLoop(FrameProvider& from, FrameChannel& to) : from(from), to(to) { }
-    ~EventLoop() {
-        if (t.joinable()) {
-            t.join();
-        }
-    }
-        
-    void start() {
-        finished.store(false);
-
-        t = std::thread([this]() {
-
-            while (!finished) {
-
-                if (pause) {
-                    // TODO: need sleep on CondVar? And wait for the next command?
-                    // Active waiting is bad solution
-                    return; //break?
-                }
-
-                RGBFrame* frame = from.get();
-                if (frame == nullptr) {
-                    continue;
-                }
-
-                bool ok = reader.nextFrame(*frame);
-                if (!ok) {
-                    from.put(frame);
-                    pause = true;
-                    continue;
-                }
-
-                bool sent = to.put(frame);
-                if (!sent) {
-                    from.put(frame);
-                    return;
-                }
-            }
-            std::cout << "stopped" << std::endl;
-        });
-    }
-    void stop() {
-        finished.store(true);
-        to.close();
-        if (t.joinable()) {
-            t.join();
-        }
-    }
-};
 
 int main() {
 
-    FrameProvider framePrivider;
-    FrameChannel readyFrames;
-    EventLoop eventLoop(framePrivider, readyFrames);
+    FramePool framePool;
+    FrameChannel frameChannel;
+    PlayLoop playLoop(framePool, frameChannel, reader);
 
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
@@ -390,59 +247,57 @@ int main() {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
-    else {
-        int width = reader.decoderContext->width;
-        int height = reader.decoderContext->height;
-        
-        GLuint textureId = createTexture(width, height);
-        render.frame[0].textureId = textureId;
-        render.frame[0].mesh.setSize(width, height);
 
-        render.frame[1].textureId = textureId;
-        render.frame[1].mesh.setSize(width, height);
+    int fileWidth = reader.decoderContext->width;
+    int fileHeight = reader.decoderContext->height;
 
-        framePrivider.setFrameSize(width, height);
-        framePrivider.reserveFrames(3);
-    }
+    GLuint textureId = createTexture(fileWidth, fileHeight);
+    render.createFrame(0, textureId, fileWidth, fileHeight);
+    render.createFrame(1, textureId, fileWidth, fileHeight);
 
-    eventLoop.start();
+    framePool.createFrames(3, fileWidth, fileHeight);
+    playLoop.startThread();
 
+    //StreamInfo info = reader.getStreamInfo();
+
+    using namespace std::chrono_literals;
+    using std::chrono::microseconds;
+    using std::chrono::duration_cast;
     using std::chrono::steady_clock;
-    auto t1 = steady_clock::now();
 
+    auto t1 = steady_clock::now();
     auto fps_t1 = steady_clock::now();
     auto fps_count = 0;
 
     const auto& style = ImGui::GetStyle();
     while (!glfwWindowShouldClose(window)) {
-        
+
         {
-            using std::chrono::microseconds;
-            using std::chrono::duration_cast;
-            
             auto t2 = steady_clock::now();
             auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
 
-            if (durationMicros * 30 >= 1000000 ) { // 1 second / 30 fps
+            if (durationMicros * 30ms >= 1000000ms ) { // TODO: this code for 30 fps. Need more general solution
                 t1 = t2;
-                RGBFrame* frame = readyFrames.get();
-                if (frame) {
-                    updateTexture(render.frame[0].textureId, *frame);
-                    updateTexture(render.frame[1].textureId, *frame);
-                    framePrivider.put(frame);
 
-                    fps_count++;
-                    auto fps_t2 = steady_clock::now();
-                    auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
-                    if (dd > 1000000) {
-                        std::cout << fps_count << std::endl;
-                        fps_t1 = steady_clock::now();
-                        fps_count = 0;
+                if (!scene.paused) {
+                    RGBFrame* frame = frameChannel.get();
+                    if (frame) {
+                        updateTexture(render.frame[0].textureId, *frame);
+                        updateTexture(render.frame[1].textureId, *frame);
+                        framePool.put(frame);
                     }
+                }
+
+                fps_count++;
+                auto fps_t2 = steady_clock::now();
+                auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
+                if (dd > 1000000) {
+                    std::cout << fps_count << std::endl;
+                    fps_t1 = steady_clock::now();
+                    fps_count = 0;
                 }
             } 
         }
-        
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -481,10 +336,9 @@ int main() {
         glfwPollEvents();
     }
 
-
-    eventLoop.stop();
-    destroyImGui();
+    playLoop.stopThread();
     render.destroy();
+    destroyImGui();
     glfwTerminate();
 	return 0;
 }

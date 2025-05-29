@@ -53,3 +53,9 @@ void Render::zoom(float value) {
 		frame[selected].mesh.zoom(value * 0.1);
 	}
 }
+void Render::createFrame(size_t frameIndex, GLuint textureId, int imageWidth, int imageHeight) {
+	frame[frameIndex].textureId = textureId;
+	frame[frameIndex].mesh.setSize(imageWidth, imageHeight);
+	//todo: probably scale here
+	//todo: implement destroyFrame()
+}
