@@ -80,7 +80,10 @@ class PlayLoop {
 public:
     PlayLoop(FramePool& pool, FrameChannel& channel, VideoReader& reader);
     ~PlayLoop();
-    void startThread();
-    void stopThread();
+    void start();
+    void stop();
+
+private:
+    void playback();
 };
 

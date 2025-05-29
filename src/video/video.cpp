@@ -290,33 +290,35 @@ PlayLoop::~PlayLoop() {
         t.join();
     }
 }
-void PlayLoop::startThread() {
+void PlayLoop::start() {
     finished.store(false);
-
     t = std::thread([this]() {
-
-        while (!finished) {
-
-            RGBFrame* frame = framePool.get();
-            bool ok = reader.nextFrame(*frame);
-            if (!ok) {
-                framePool.put(frame);
-                continue;
-            }
-
-            bool sent = toChannel.put(frame); //<-- cv wait here
-            if (!sent) {
-                framePool.put(frame);
-                return;
-            }
-        }
-        std::cout << "stopped" << std::endl;
+        playback();
     });
 }
-void PlayLoop::stopThread() {
+void PlayLoop::stop() {
     finished.store(true);
     toChannel.close();
     if (t.joinable()) {
         t.join();
     }
+}
+void PlayLoop::playback() {
+
+    while (!finished) {
+
+        RGBFrame* frame = framePool.get();
+        bool ok = reader.nextFrame(*frame);
+        if (!ok) {
+            framePool.put(frame);
+            continue;
+        }
+
+        bool sent = toChannel.put(frame); //<-- condvar::wait() here
+        if (!sent) {
+            framePool.put(frame);
+            return;
+        }
+    }
+    std::cout << "stopped" << std::endl;
 }

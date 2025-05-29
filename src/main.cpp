@@ -256,9 +256,9 @@ int main() {
     render.createFrame(1, textureId, fileWidth, fileHeight);
 
     framePool.createFrames(3, fileWidth, fileHeight);
-    playLoop.startThread();
+    playLoop.start();
 
-    //StreamInfo info = reader.getStreamInfo();
+
 
     using namespace std::chrono_literals;
     using std::chrono::microseconds;
@@ -269,7 +269,9 @@ int main() {
     auto fps_t1 = steady_clock::now();
     auto fps_count = 0;
 
-    const auto& style = ImGui::GetStyle();
+    float videoProgress = 0.f;
+    StreamInfo videoInfo = reader.getStreamInfo();
+
     while (!glfwWindowShouldClose(window)) {
 
         {
@@ -282,9 +284,14 @@ int main() {
                 if (!scene.paused) {
                     RGBFrame* frame = frameChannel.get();
                     if (frame) {
+                        //scene.paused = true;
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
                         framePool.put(frame);
+
+                        int64_t pts = frame->pts;
+                        int64_t dur = videoInfo.duration;
+                        videoProgress = (pts * 100.f) / dur;
                     }
                 }
 
@@ -313,14 +320,22 @@ int main() {
             ImGuiWindowFlags_NoNavInputs | 
             ImGuiWindowFlags_NoNavFocus)) {
 
-            static float progress = 0.1f;
+            static float progress = videoProgress;
+
+            float progress_old = progress;
+            const auto& style = ImGui::GetStyle();
             float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
             ImGui::PushItemWidth(itemWidth);
-            ImGui::SliderFloat("##slider1", &progress, 0.0f, 1.0f, "%.3f", flags);
+            bool changed1 = ImGui::SliderFloat("##slider1", &videoProgress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::SameLine(0.f, style.WindowPadding.x);
-            ImGui::SliderFloat("##slider2", &progress, 0.0f, 1.0f, "%.3f", flags);
+            bool changed2 = ImGui::SliderFloat("##slider2", &videoProgress, 0.0f, 100.0f, "%.2f", flags);
             ImGui::PopItemWidth();
+
+            if (progress != progress_old) {
+                std::cout << "changed: " << changed1 << " " << changed2 << std::endl;
+            }
+            
         }        
         ImGui::End();
         //ImGui::ShowDemoWindow();
@@ -336,7 +351,7 @@ int main() {
         glfwPollEvents();
     }
 
-    playLoop.stopThread();
+    playLoop.stop();
     render.destroy();
     destroyImGui();
     glfwTerminate();
