@@ -19,6 +19,16 @@ struct StreamInfo {
     AVRational time_base;
     int64_t duration;
     int64_t nb_frames;
+    float calcProgress(int64_t pts) const {
+        if (duration == 0) {
+            return 0;
+        }
+
+        float value = (pts * 100.f) / duration;
+        if (value < 0.f) return 0;
+        if (value > 100.f) return 100.f;
+        return value;
+    }
 };
 
 struct VideoReader {
@@ -82,6 +92,7 @@ struct PlayLoop {
     ~PlayLoop();
     void start();
     void stop();
+    void dir(int value);
 
 private:
     void playback();

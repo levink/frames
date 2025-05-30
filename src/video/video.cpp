@@ -116,7 +116,6 @@ bool VideoReader::nextFrame(RGBFrame& result) {
     return false;
 }
 bool VideoReader::prevFrame(int64_t pts, RGBFrame& result) {
-    //todo: case for (pts < 0) ?
 
     int seek_res = av_seek_frame(formatContext, videoStreamIndex, pts, AVSEEK_FLAG_BACKWARD);
     if (seek_res < 0) {
@@ -279,7 +278,6 @@ void FrameChannel::close() {
     cv.notify_one();
 }
 
-
 PlayLoop::PlayLoop(FramePool& pool, FrameChannel& channel, VideoReader& reader) :
     framePool(pool),
     toChannel(channel),
@@ -303,9 +301,13 @@ void PlayLoop::stop() {
         t.join();
     }
 }
+void PlayLoop::dir(int value) {
+    direction.store(value);
+}
+
 void PlayLoop::playback() {
 
-    int64_t lastPTS = 0; //todo: move to reader?
+    int64_t pts = 0;
 
     while (!finished) {
 
@@ -314,20 +316,21 @@ void PlayLoop::playback() {
         int dir = direction.load();
         bool ok =
             (dir > 0) ? reader.nextFrame(*frame) :
-            (dir < 0) ? reader.prevFrame(lastPTS - 1, *frame) :
+            (dir < 0) ? reader.prevFrame(pts  - 1, *frame) :
             false;
         
         if (!ok) {
             framePool.put(frame);
             continue;
         }
-        lastPTS = frame->pts;
 
         bool sent = toChannel.put(frame); //<-- condvar::wait() here
         if (!sent) {
             framePool.put(frame);
             return;
         }
+
+        pts = frame->pts;
     }
     std::cout << "stopped" << std::endl;
 }

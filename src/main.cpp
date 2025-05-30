@@ -48,13 +48,21 @@ struct SceneSize {
 
 struct Player {
     bool paused = false;
-    int nextFrames = 0;
+    float progress = 0.f;
+    int direction = 0;
+    bool needUpdate = 0;
+
+    int64_t pts = 0;
+    int64_t dur = 0;
 };
 
-SceneSize scene;
 Render render;
+SceneSize scene;
 VideoReader reader;
 Player player;
+FramePool framePool;
+FrameChannel frameChannel;
+PlayLoop playLoop(framePool, frameChannel, reader);
 
 
 static GLuint createTexture(int width, int height) {
@@ -114,21 +122,27 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(SPACE)) {
         player.paused = !player.paused;
+        if (player.paused == false) { 
+            //todo: 2 sources of truth. bad
+            player.direction = 1;
+            playLoop.dir(1);
+        }
     }
     else if (key.is(LEFT)) {
         if (player.paused) {
-            player.nextFrames--;
+            //todo: 2 sources of truth. bad
+            playLoop.dir(-1);
+            player.direction = -1;
+            player.needUpdate = true;
         }
     }
     else if (key.is(RIGHT)) {
         if (player.paused) {
-            player.nextFrames++;
+            //todo: 2 sources of truth. bad
+            playLoop.dir(1);
+            player.direction = 1;
+            player.needUpdate = true;
         }
-    }
-    else if (key.is(PERIOD)) {
-        //reader.nextFrame(frameRGB);
-        /*updateTexture(render.frame[0].textureId, frameRGB);
-        updateTexture(render.frame[1].textureId, frameRGB);*/
     }
 }
 static void mouseCallback(ui::mouse::MouseEvent event) {
@@ -251,19 +265,13 @@ int main() {
         return -1;
     }
 
-    int fileWidth = reader.decoderContext->width;
-    int fileHeight = reader.decoderContext->height;
+    int frameWidth = reader.decoderContext->width;
+    int frameHeight = reader.decoderContext->height;
 
-    GLuint textureId = createTexture(fileWidth, fileHeight);
-    render.createFrame(0, textureId, fileWidth, fileHeight);
-    render.createFrame(1, textureId, fileWidth, fileHeight);
-
-
-    FramePool framePool;
-    FrameChannel frameChannel;
-    PlayLoop playLoop(framePool, frameChannel, reader);
-    
-    framePool.createFrames(3, fileWidth, fileHeight);
+    GLuint textureId = createTexture(frameWidth, frameHeight);
+    render.createFrame(0, textureId, frameWidth, frameHeight);
+    render.createFrame(1, textureId, frameWidth, frameHeight);
+    framePool.createFrames(3, frameWidth, frameHeight);
     playLoop.start();
 
     using namespace std::chrono_literals;
@@ -275,70 +283,66 @@ int main() {
     auto fps_t1 = steady_clock::now();
     auto fps_count = 0;
 
-    float videoProgress = 0.f;
     StreamInfo videoInfo = reader.getStreamInfo();
-
     while (!glfwWindowShouldClose(window)) {
 
         {
-            auto t2 = steady_clock::now();
-            auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
-
             if (player.paused) {
-                if (player.nextFrames > 0) {
-                    playLoop.direction.store(1);
+                if (player.needUpdate) {
 
                     RGBFrame* frame = frameChannel.get();
                     if (frame) {
-                        updateTexture(render.frame[0].textureId, *frame);
-                        updateTexture(render.frame[1].textureId, *frame);
+
+                        bool canUpdate =
+                            (player.direction > 0) ? (frame->pts > player.pts) :
+                            (player.direction < 0) ? (frame->pts < player.pts) :
+                            false;
+
+                        if (canUpdate) {
+                            std::cout << "update frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
+
+                            player.progress = videoInfo.calcProgress(frame->pts);
+                            player.pts = frame->pts;
+                            player.dur = frame->duration;
+                            player.needUpdate = false;
+
+                            updateTexture(render.frame[0].textureId, *frame);
+                            updateTexture(render.frame[1].textureId, *frame);
+                        }
+                        else {
+                            std::cout << "skip frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
+                        }
+
                         framePool.put(frame);
-
-                        int64_t pts = frame->pts;
-                        int64_t dur = videoInfo.duration;
-                        videoProgress = (pts * 100.f) / dur;
-
-                        player.nextFrames = 0;
                     }
                 }
-                else if (player.nextFrames < 0) {
-                    playLoop.direction.store(-1);
+            }
+            else {
+                auto t2 = steady_clock::now();
+                auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
 
-                    RGBFrame* frame = frameChannel.get();
-                    if (frame) {
-                        updateTexture(render.frame[0].textureId, *frame);
-                        updateTexture(render.frame[1].textureId, *frame);
-                        framePool.put(frame);
-
-                        int64_t pts = frame->pts;
-                        int64_t dur = videoInfo.duration;
-                        videoProgress = (pts * 100.f) / dur;
-
-                        player.nextFrames = 0;
-                    }
-                }
-
+                // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
+                bool needUpdate = durationMicros * 30ms >= 1000000ms;
+                if (needUpdate) { 
+                    t1 = t2;
                     
+                    RGBFrame* frame = frameChannel.get();
+                    if (frame) {
+                        if (frame->pts > player.pts) {
+                            player.progress = videoInfo.calcProgress(frame->pts);
+                            player.pts = frame->pts;
+                            player.dur = frame->duration;
+
+                            updateTexture(render.frame[0].textureId, *frame);
+                            updateTexture(render.frame[1].textureId, *frame);
+                        }
+                        framePool.put(frame);
+                    }
+                }
             }
             
-            if (durationMicros * 30ms >= 1000000ms ) { // TODO: this code for 30 fps. Need more general solution
-                t1 = t2;
-
-                if (!player.paused) {
-                    RGBFrame* frame = frameChannel.get();
-                    if (frame) {
-                        //scene.paused = true;
-                        updateTexture(render.frame[0].textureId, *frame);
-                        updateTexture(render.frame[1].textureId, *frame);
-                        framePool.put(frame);
-
-                        int64_t pts = frame->pts;
-                        int64_t dur = videoInfo.duration;
-                        videoProgress = (pts * 100.f) / dur;
-                    }
-                }
-
-               /* fps_count++;
+           
+            /* fps_count++;
                 auto fps_t2 = steady_clock::now();
                 auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
                 if (dd > 1000000) {
@@ -346,7 +350,6 @@ int main() {
                     fps_t1 = steady_clock::now();
                     fps_count = 0;
                 }*/
-            } 
         }
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -363,21 +366,19 @@ int main() {
             ImGuiWindowFlags_NoNavInputs | 
             ImGuiWindowFlags_NoNavFocus)) {
 
-            static float progress = videoProgress;
-
-            float progress_old = progress;
+            /*static float progress = player.progress;*/
             const auto& style = ImGui::GetStyle();
             float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
             ImGui::PushItemWidth(itemWidth);
-            bool changed1 = ImGui::SliderFloat("##slider1", &videoProgress, 0.0f, 100.0f, "%.f%%", flags);
+            bool changed1 = ImGui::SliderFloat("##slider1", &player.progress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::SameLine(0.f, style.WindowPadding.x);
-            bool changed2 = ImGui::SliderFloat("##slider2", &videoProgress, 0.0f, 100.0f, "%.f%%", flags);
+            bool changed2 = ImGui::SliderFloat("##slider2", &player.progress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::PopItemWidth();
 
-            if (progress != progress_old) {
+           /* if (progress != progress_old) {
                 std::cout << "changed: " << changed1 << " " << changed2 << std::endl;
-            }
+            }*/
             
         }        
         ImGui::End();
