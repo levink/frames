@@ -29,6 +29,9 @@ struct StreamInfo {
         if (value > 100.f) return 100.f;
         return value;
     }
+    //int64_t toTS(long long micros) {
+
+    //}
 };
 
 struct VideoReader {
@@ -67,34 +70,31 @@ public:
     RGBFrame* get();
 };
 
-class FrameChannel {
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::atomic<bool> closed = false;
-    RGBFrame* cached = nullptr;
-
-public:
-    ~FrameChannel();
-    bool put(RGBFrame* newFrame);
-    RGBFrame* get();
-    void close();
-};
-
 struct PlayLoop {
     std::thread t;
     std::atomic<bool> finished = false;
-    std::atomic<int> direction = 1;
     FramePool& framePool;
-    FrameChannel& toChannel;
     VideoReader& reader;
+    int64_t seek_pts = -1;
 
-    PlayLoop(FramePool& pool, FrameChannel& channel, VideoReader& reader);
+    PlayLoop(FramePool& pool, VideoReader& reader);
     ~PlayLoop();
     void start();
     void stop();
-    void dir(int value);
 
 private:
     void playback();
+    bool readFrame(RGBFrame* result);
+
+
+private:
+    std::mutex mtx;
+    std::condition_variable cv;
+    RGBFrame* nextFrame = nullptr;
+    bool sendFrame(RGBFrame* newFrame);
+
+public:
+    RGBFrame* next();
+    void seek(int64_t pts);
 };
 

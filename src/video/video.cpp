@@ -224,8 +224,10 @@ void FramePool::createFrames(size_t count, int w, int h) {
     }
 }
 void FramePool::put(RGBFrame* item) {
-    auto lock = std::lock_guard(mtx);
-    items.push_back(item);
+    if (item) {
+        auto lock = std::lock_guard(mtx);
+        items.push_back(item);
+    }
 }
 RGBFrame* FramePool::get() {
     auto lock = std::lock_guard(mtx);
@@ -241,48 +243,9 @@ RGBFrame* FramePool::get() {
 }
 
 
-FrameChannel::~FrameChannel() {
-    delete cached;
-}
-bool FrameChannel::put(RGBFrame* newFrame) {
-    if (closed) {
-        return false;
-    }
-
-    auto lock = std::unique_lock(mtx);
-    while (!closed && cached) {
-        cv.wait(lock);
-    }
-
-    if (closed) {
-        return false;
-    }
-
-    cached = newFrame;
-    return true;
-}
-RGBFrame* FrameChannel::get() {
-    auto lock = std::lock_guard(mtx);
-    if (cached == nullptr) {
-        return nullptr;
-    }
-
-    RGBFrame* result = cached;
-    cached = nullptr;
-    cv.notify_one();
-    return result;
-}
-void FrameChannel::close() {
-    auto lock = std::unique_lock(mtx);
-    closed.store(true);
-    cv.notify_one();
-}
-
-PlayLoop::PlayLoop(FramePool& pool, FrameChannel& channel, VideoReader& reader) :
+PlayLoop::PlayLoop(FramePool& pool, VideoReader& reader) :
     framePool(pool),
-    toChannel(channel),
-    reader(reader) {
-}
+    reader(reader) { }
 PlayLoop::~PlayLoop() {
     if (t.joinable()) {
         t.join();
@@ -296,41 +259,73 @@ void PlayLoop::start() {
 }
 void PlayLoop::stop() {
     finished.store(true);
-    toChannel.close();
+    cv.notify_one();
     if (t.joinable()) {
         t.join();
     }
 }
-void PlayLoop::dir(int value) {
-    direction.store(value);
-}
-
 void PlayLoop::playback() {
-
-    int64_t pts = 0;
-
     while (!finished) {
-
         RGBFrame* frame = framePool.get();
-
-        int dir = direction.load();
-        bool ok =
-            (dir > 0) ? reader.nextFrame(*frame) :
-            (dir < 0) ? reader.prevFrame(pts  - 1, *frame) :
-            false;
-        
+        bool ok = readFrame(frame);
         if (!ok) {
             framePool.put(frame);
             continue;
         }
 
-        bool sent = toChannel.put(frame); //<-- condvar::wait() here
+        bool sent = sendFrame(frame);
         if (!sent) {
             framePool.put(frame);
-            return;
         }
-
-        pts = frame->pts;
     }
     std::cout << "stopped" << std::endl;
+}
+bool PlayLoop::readFrame(RGBFrame* result) {
+    
+    bool needSeek = false;
+    int64_t pts = 0;
+
+    if (seek_pts >= 0) {
+        auto lock = std::lock_guard(mtx);
+        needSeek = (seek_pts >= 0);
+        pts = seek_pts;
+        seek_pts = -1;
+    }
+
+    if (needSeek) {
+        return reader.prevFrame(pts, *result);
+    }
+    return reader.nextFrame(*result);
+}
+bool PlayLoop::sendFrame(RGBFrame* newFrame) {
+    auto lock = std::unique_lock(mtx);
+    while (!finished && nextFrame) {
+        cv.wait(lock);
+    }
+    if (finished || seek_pts >= 0) {
+        return false;
+    }
+    nextFrame = newFrame;
+    return true;
+}
+
+RGBFrame* PlayLoop::next() {
+    auto lock = std::lock_guard(mtx);
+    if (nextFrame == nullptr) {
+        return nullptr;
+    }
+    RGBFrame* result = nextFrame;
+    nextFrame = nullptr;
+    cv.notify_one();
+    return result;
+}
+
+void PlayLoop::seek(int64_t pts) {
+    auto lock = std::lock_guard(mtx);
+    seek_pts = pts;
+
+    framePool.put(nextFrame);
+    nextFrame = nullptr;
+
+    cv.notify_one();
 }

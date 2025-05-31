@@ -49,7 +49,6 @@ struct SceneSize {
 struct Player {
     bool paused = false;
     float progress = 0.f;
-    int direction = 0;
     bool needUpdate = 0;
 
     int64_t pts = 0;
@@ -61,8 +60,7 @@ SceneSize scene;
 VideoReader reader;
 Player player;
 FramePool framePool;
-FrameChannel frameChannel;
-PlayLoop playLoop(framePool, frameChannel, reader);
+PlayLoop playLoop(framePool, reader);
 
 
 static GLuint createTexture(int width, int height) {
@@ -122,25 +120,16 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(SPACE)) {
         player.paused = !player.paused;
-        if (player.paused == false) { 
-            //todo: 2 sources of truth. bad
-            player.direction = 1;
-            playLoop.dir(1);
-        }
+        player.needUpdate = false;
     }
     else if (key.is(LEFT)) {
         if (player.paused) {
-            //todo: 2 sources of truth. bad
-            playLoop.dir(-1);
-            player.direction = -1;
             player.needUpdate = true;
+            playLoop.seek(player.pts - 1);
         }
     }
     else if (key.is(RIGHT)) {
         if (player.paused) {
-            //todo: 2 sources of truth. bad
-            playLoop.dir(1);
-            player.direction = 1;
             player.needUpdate = true;
         }
     }
@@ -290,16 +279,16 @@ int main() {
             if (player.paused) {
                 if (player.needUpdate) {
 
-                    RGBFrame* frame = frameChannel.get();
+                    RGBFrame* frame = playLoop.next();
                     if (frame) {
 
-                        bool canUpdate =
+                        /*bool canUpdate = true;
                             (player.direction > 0) ? (frame->pts > player.pts) :
                             (player.direction < 0) ? (frame->pts < player.pts) :
-                            false;
+                            false;*/
 
-                        if (canUpdate) {
-                            std::cout << "update frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
+                        //if (canUpdate) {
+                            //std::cout << "update frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
 
                             player.progress = videoInfo.calcProgress(frame->pts);
                             player.pts = frame->pts;
@@ -308,10 +297,10 @@ int main() {
 
                             updateTexture(render.frame[0].textureId, *frame);
                             updateTexture(render.frame[1].textureId, *frame);
-                        }
-                        else {
-                            std::cout << "skip frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
-                        }
+                        /*}
+                        else {*/
+                            //std::cout << "skip frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
+                        //}
 
                         framePool.put(frame);
                     }
@@ -320,13 +309,14 @@ int main() {
             else {
                 auto t2 = steady_clock::now();
                 auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
-
+                //auto durationTS = videoInfo.toTS(durationMicros);
+                //if (durationTS > player.dur) { }
                 // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
-                bool needUpdate = durationMicros * 30ms >= 1000000ms;
-                if (needUpdate) { 
+                bool needUpdate = durationMicros * 30us >= 1000000us;
+                if (needUpdate) {
                     t1 = t2;
-                    
-                    RGBFrame* frame = frameChannel.get();
+
+                    RGBFrame* frame = playLoop.next();
                     if (frame) {
                         if (frame->pts > player.pts) {
                             player.progress = videoInfo.calcProgress(frame->pts);
@@ -340,8 +330,6 @@ int main() {
                     }
                 }
             }
-            
-           
             /* fps_count++;
                 auto fps_t2 = steady_clock::now();
                 auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
