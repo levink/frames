@@ -1,5 +1,62 @@
 #include <iostream>
+#include <algorithm>
 #include "video.h"
+
+
+static int64_t getFramePTS(const AVFrame* frame) {
+    if (frame == nullptr) {
+        return 0;
+    }
+
+    if (frame->best_effort_timestamp == AV_NOPTS_VALUE) {
+        return frame->pts;
+    }
+
+    return frame->best_effort_timestamp;
+}
+
+FramePool::~FramePool() {
+    for (auto& item : items) {
+        delete item;
+    }
+}
+void FramePool::createFrames(size_t count, int w, int h) {
+    auto lock = std::lock_guard(mtx);
+
+    frameWidth = w;
+    frameHeight = h;
+    items.reserve(items.size() + count);
+    for (size_t i = 0; i < count; i++) {
+        items.emplace_back(new RGBFrame(w, h));
+    }
+}
+void FramePool::put(RGBFrame* frame) {
+    if (frame) {
+        auto lock = std::lock_guard(mtx);
+        frame->pts = -1;
+        frame->duration = 0;
+        items.push_back(frame);
+    }
+}
+void FramePool::put(const std::vector<RGBFrame*>& frames) {
+    auto lock = std::lock_guard(mtx);
+    for (auto frame : frames) {
+        frame->pts = -1;
+        frame->duration = 0;
+    }
+    items.insert(items.end(), frames.begin(), frames.end());
+}
+RGBFrame* FramePool::get() {
+    auto lock = std::lock_guard(mtx);
+
+    if (items.empty()) {
+        return new RGBFrame(frameWidth, frameHeight);
+    }
+
+    auto last = items.back();
+    items.pop_back();
+    return last;
+}
 
 bool RGBConverter::createContext(const AVCodecContext* decoder) {
     const auto& width = decoder->width;
@@ -29,17 +86,6 @@ int RGBConverter::toRGB(const AVFrame* frame, RGBFrame& result) {
 }
 
 
-static int64_t getFramePTS(const AVFrame* frame) {
-    if (frame == nullptr) {
-        return 0;
-    }
-
-    if (frame->best_effort_timestamp == AV_NOPTS_VALUE) {
-        return frame->pts;
-    }
-
-    return frame->best_effort_timestamp;
-}
 VideoReader::VideoReader() {
     av_log_set_level(AV_LOG_FATAL);
 }
@@ -59,7 +105,7 @@ VideoReader::~VideoReader() {
     }
     converter.destroyContext();
 }
-bool VideoReader::openFile(const char* fileName) {
+bool VideoReader::open(const char* fileName) {
 
     if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
         return false;// OpenFileResult::FileBadOpen;
@@ -104,9 +150,9 @@ bool VideoReader::openFile(const char* fileName) {
 
     return true;// OpenFileResult::Ok;
 }
-bool VideoReader::nextFrame(RGBFrame& result) {
-    if (readFrame()) {
-        bool ok = toRGB(frame, result);
+bool VideoReader::read(RGBFrame& result) {
+    if (readRaw()) {
+        bool ok = convert(frame, result);
         av_frame_unref(frame);
         av_packet_unref(packet);
         return ok;
@@ -115,38 +161,25 @@ bool VideoReader::nextFrame(RGBFrame& result) {
     std::cout << "readFrame() finished" << std::endl;
     return false;
 }
-bool VideoReader::prevFrame(int64_t pts, RGBFrame& result) {
-
-    int seek_res = av_seek_frame(formatContext, videoStreamIndex, pts, AVSEEK_FLAG_BACKWARD);
-    if (seek_res < 0) {
-        return false;
-    }
-    avcodec_flush_buffers(decoderContext);
-
-    bool frameFound = false;
-    while (readFrame()) {
-        int64_t framePts = getFramePTS(frame);
-        int64_t frameDur = frame->duration;
-        if (framePts + frameDur < pts) {
+bool VideoReader::read(RGBFrame& result, int64_t skipPts) {
+    while (readRaw()) {    
+        auto pts = frame->pts;
+        if (pts < skipPts) {
             av_frame_unref(frame);
             av_packet_unref(packet);
             continue;
         }
 
-        frameFound = true;
-        break;
-    }
-
-    if (frameFound) {
-        bool ok = toRGB(frame, result);
+        bool ok = convert(frame, result);
         av_frame_unref(frame);
         av_packet_unref(packet);
         return ok;
     }
 
+    std::cout << "readFrame() finished" << std::endl;
     return false;
 }
-bool VideoReader::readFrame() const {
+bool VideoReader::readRaw() const {
     while (true) {
         int ret = av_read_frame(formatContext, packet);
         if (ret < 0) {
@@ -177,7 +210,7 @@ bool VideoReader::readFrame() const {
     }
     return true;
 }
-bool VideoReader::toRGB(const AVFrame* frame, RGBFrame& result) {
+bool VideoReader::convert(const AVFrame* frame, RGBFrame& result) {
     
     bool sameSize = result.checkSize(frame->width, frame->height);
     if (!sameSize) {
@@ -195,6 +228,14 @@ bool VideoReader::toRGB(const AVFrame* frame, RGBFrame& result) {
     result.duration = frame->duration;
     return true;
 }
+bool VideoReader::seek(int64_t pts) {
+    int result = av_seek_frame(formatContext, videoStreamIndex, pts, AVSEEK_FLAG_BACKWARD);
+    if (result < 0) {
+        return false;
+    }
+    avcodec_flush_buffers(decoderContext);
+    return true;
+}
 StreamInfo VideoReader::getStreamInfo() const {
     if (videoStreamIndex < 0 || formatContext->nb_streams <= videoStreamIndex) {
         return StreamInfo{ {0, 1}, 0, 0 };
@@ -205,41 +246,6 @@ StreamInfo VideoReader::getStreamInfo() const {
         stream->duration,
         stream->nb_frames
     };
-}
-
-
-FramePool::~FramePool() {
-    for (auto& item : items) {
-        delete item;
-    }
-}
-void FramePool::createFrames(size_t count, int w, int h) {
-    auto lock = std::lock_guard(mtx);
-
-    frameWidth = w;
-    frameHeight = h;
-    items.reserve(items.size() + count);
-    for (size_t i = 0; i < count; i++) {
-        items.emplace_back(new RGBFrame(w, h));
-    }
-}
-void FramePool::put(RGBFrame* item) {
-    if (item) {
-        auto lock = std::lock_guard(mtx);
-        items.push_back(item);
-    }
-}
-RGBFrame* FramePool::get() {
-    auto lock = std::lock_guard(mtx);
-
-    if (items.empty()) {
-        return new RGBFrame(frameWidth, frameHeight);
-    }
-
-    auto last = items.back();
-    items.pop_back();
-
-    return last;
 }
 
 
@@ -264,68 +270,161 @@ void PlayLoop::stop() {
         t.join();
     }
 }
-void PlayLoop::playback() {
-    while (!finished) {
-        RGBFrame* frame = framePool.get();
-        bool ok = readFrame(frame);
-        if (!ok) {
-            framePool.put(frame);
-            continue;
-        }
+void PlayLoop::set(int8_t dir, int64_t pts) {
+    auto lock = std::lock_guard(mtx);
 
-        bool sent = sendFrame(frame);
-        if (!sent) {
-            framePool.put(frame);
+    //set state
+    sharedState.dir = dir;
+    sharedState.seekPts = pts;
+
+    //flush
+    auto tmp = result;
+    result = nullptr;
+    framePool.put(tmp);
+
+    //wake up background thread
+    cv.notify_one();
+}
+RGBFrame* PlayLoop::next() {
+    auto lock = std::lock_guard(mtx);
+    if (result == nullptr) {
+        return nullptr;
+    }
+
+    auto tmp = result;
+    result = nullptr;
+    cv.notify_one();
+
+    return tmp;
+}
+void PlayLoop::playback() {
+
+    while (canRead()) {
+        State copy = copyState();
+        auto frame = readFrame(copy.dir, copy.seekPts);
+        if (frame) {
+            saveResult(frame);
         }
     }
     std::cout << "stopped" << std::endl;
 }
-bool PlayLoop::readFrame(RGBFrame* result) {
-    
-    bool needSeek = false;
-    int64_t pts = 0;
-
-    if (seek_pts >= 0) {
-        auto lock = std::lock_guard(mtx);
-        needSeek = (seek_pts >= 0);
-        pts = seek_pts;
-        seek_pts = -1;
-    }
-
-    if (needSeek) {
-        return reader.prevFrame(pts, *result);
-    }
-    return reader.nextFrame(*result);
-}
-bool PlayLoop::sendFrame(RGBFrame* newFrame) {
+bool PlayLoop::canRead() {
     auto lock = std::unique_lock(mtx);
-    while (!finished && nextFrame) {
+    while (!finished && result) {
         cv.wait(lock);
     }
-    if (finished || seek_pts >= 0) {
-        return false;
-    }
-    nextFrame = newFrame;
-    return true;
+    return !finished;
 }
+RGBFrame* PlayLoop::readFrame(int8_t dir, int64_t seekPts) {
 
-RGBFrame* PlayLoop::next() {
-    auto lock = std::lock_guard(mtx);
-    if (nextFrame == nullptr) {
-        return nullptr;
+    if (dir > 0) {
+        if (seekPts >= 0) {
+
+            bool ok = reader.seek(seekPts);
+            if (!ok) {
+                return nullptr;
+            }
+
+            auto frame = framePool.get();
+            ok = reader.read(*frame, seekPts);
+            if (!ok) {
+                framePool.put(frame);
+                return nullptr;
+            }
+
+            return frame;
+        }
+        else {
+            auto frame = framePool.get();
+            bool ok = reader.read(*frame);
+            if (!ok) {
+                framePool.put(frame);
+                return nullptr;
+            }
+            return frame;
+        }
     }
-    RGBFrame* result = nextFrame;
-    nextFrame = nullptr;
-    cv.notify_one();
-    return result;
+
+    if (dir < 0) {
+
+        if (seekPts < 0 && prevCache.empty()) {
+            seekPts = lastPts - 1;
+        }
+
+        if (seekPts >= 0) {
+            reader.seek(seekPts);
+            
+            prevCache.resize(5, nullptr);
+            for (auto& item : prevCache) {
+                if (item == nullptr) {
+                    item = framePool.get();
+                }
+                item->pts = -1;
+                item->duration = 0;
+            }
+            
+            size_t writeIndex = 0;
+            bool found = false;
+            auto frame = prevCache[writeIndex];
+            while (reader.read(*frame)) {
+                auto min = frame->pts;
+                auto max = frame->pts + frame->duration;
+                if (min <= seekPts && seekPts < max) {
+                    found = true;
+                    break;
+                }
+                if (seekPts < min) {
+                    break;
+                }
+                writeIndex = (writeIndex + 1) % prevCache.size();
+                frame = prevCache[writeIndex];
+            }
+
+            if (found) {
+                /*
+                    cache.clearUnused();
+                    cache.sortByPTS();
+                */
+                for (size_t i = 0; i < prevCache.size(); i++) {
+                    if (prevCache[i]->pts == -1) {
+                        framePool.put(prevCache[i]);
+                        prevCache[i] = nullptr;
+                    }
+                }
+                prevCache.erase(std::remove_if(prevCache.begin(), prevCache.end(), [](RGBFrame* item) {
+                    return item == nullptr;
+                }), prevCache.end());
+
+                std::sort(prevCache.begin(), prevCache.end(), [](RGBFrame* left, RGBFrame* right) {
+                    return left->pts < right->pts;
+                });
+            }
+            else {
+                // Not found. Need clear cache
+                framePool.put(prevCache);
+                prevCache.clear();
+            }
+        }
+        
+        if (prevCache.empty()) {
+            return nullptr;
+        }
+
+        auto frame = prevCache.back();
+        prevCache.pop_back();
+        return frame;
+    }
+
+    return nullptr;
 }
-
-void PlayLoop::seek(int64_t pts) {
+void PlayLoop::saveResult(RGBFrame* frame) {
+    auto lock = std::unique_lock(mtx);
+    result = frame;
+    lastPts = frame->pts;
+}
+PlayLoop::State PlayLoop::copyState() {
     auto lock = std::lock_guard(mtx);
-    seek_pts = pts;
-
-    framePool.put(nextFrame);
-    nextFrame = nullptr;
-
-    cv.notify_one();
+    auto copy = sharedState;
+    sharedState.seekPts = -1;
+    return copy;
 }

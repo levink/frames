@@ -2,8 +2,26 @@
 #include <vector>
 #include <mutex>
 #include <condition_variable>
+#include <functional>
 #include "ffmpeg.h"
 #include "frame.h"
+
+using std::vector;
+
+class FramePool {
+    std::mutex mtx;
+    std::vector<RGBFrame*> items;
+    int frameWidth = 0;
+    int frameHeight = 0;
+
+public:
+    FramePool() = default;
+    ~FramePool();
+    void createFrames(size_t count, int w, int h);
+    void put(RGBFrame* item);
+    void put(const std::vector<RGBFrame*>& frames);
+    RGBFrame* get();
+};
 
 struct RGBConverter {
     SwsContext* swsContext = nullptr;
@@ -29,9 +47,6 @@ struct StreamInfo {
         if (value > 100.f) return 100.f;
         return value;
     }
-    //int64_t toTS(long long micros) {
-
-    //}
 };
 
 struct VideoReader {
@@ -46,55 +61,48 @@ struct VideoReader {
     VideoReader();
     ~VideoReader();
 
-    bool openFile(const char* fileName);
-    bool nextFrame(RGBFrame& result);
-    bool prevFrame(int64_t pts, RGBFrame& result);
+    bool open(const char* fileName);
+    bool read(RGBFrame& result);
+    bool read(RGBFrame& result, int64_t skipPts);
+    bool seek(int64_t pts);
+
     StreamInfo getStreamInfo() const;
 
 private:
-    bool readFrame() const;
-    bool toRGB(const AVFrame* frame, RGBFrame& result);
+    bool readRaw() const;
+    bool convert(const AVFrame* frame, RGBFrame& result);
 };
 
-class FramePool {
-    std::mutex mtx;
-    std::vector<RGBFrame*> items;
-    int frameWidth = 0;
-    int frameHeight = 0;
-
-public:
-    FramePool() = default;
-    ~FramePool();
-    void createFrames(size_t count, int w, int h);
-    void put(RGBFrame* item);
-    RGBFrame* get();
-};
-
-struct PlayLoop {
+class PlayLoop {
     std::thread t;
+    std::mutex mtx;
+    std::condition_variable cv;
     std::atomic<bool> finished = false;
     FramePool& framePool;
     VideoReader& reader;
-    int64_t seek_pts = -1;
 
+    struct State {
+        int8_t dir = 1;
+        int64_t seekPts = -1;
+    } sharedState;
+
+    
+    RGBFrame* result = nullptr;
+    vector<RGBFrame*> prevCache;
+    int64_t lastPts = -1;
+
+    void playback();
+    bool canRead();
+    RGBFrame* readFrame(int8_t dir, int64_t seekPts);
+    void saveResult(RGBFrame* frame);
+    State copyState();
+
+public:
     PlayLoop(FramePool& pool, VideoReader& reader);
     ~PlayLoop();
     void start();
     void stop();
-
-private:
-    void playback();
-    bool readFrame(RGBFrame* result);
-
-
-private:
-    std::mutex mtx;
-    std::condition_variable cv;
-    RGBFrame* nextFrame = nullptr;
-    bool sendFrame(RGBFrame* newFrame);
-
-public:
+    void set(int8_t dir, int64_t pts);
     RGBFrame* next();
-    void seek(int64_t pts);
 };
 

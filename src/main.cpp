@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <deque>
 #include "image/lodepng.h"
 #include "ui/ui.h"
 #include "video/video.h"
@@ -14,7 +15,6 @@
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
-
 
 struct SceneSize {
     
@@ -46,21 +46,178 @@ struct SceneSize {
     }
 };
 
-struct Player {
-    bool paused = false;
+struct PlayState {
     float progress = 0.f;
-    bool needUpdate = 0;
-
     int64_t pts = 0;
     int64_t dur = 0;
+
+    bool paused = false;
+    int nextFrame = 0; // when paused
 };
 
 Render render;
 SceneSize scene;
 VideoReader reader;
-Player player;
 FramePool framePool;
 PlayLoop playLoop(framePool, reader);
+PlayState ps;
+
+struct FrameQueue {
+
+    const size_t capacity = 5;
+    const size_t deltaMin = 1;
+
+    std::deque<RGBFrame*> items;
+    size_t selected = -1;
+    int8_t loadDir = 1;
+
+    const RGBFrame* next() {
+       
+        if (items.empty() || selected + 1 == items.size()) {
+            return nullptr;
+        }
+
+        selected++;
+        return items[selected];
+    }    
+
+    const RGBFrame* prev() {
+        constexpr int first = 0;
+        if (items.empty() || selected == first) {
+            return nullptr;
+        }
+        
+        selected--;
+        return items[selected];
+    }
+
+    void print() const {
+        std::cout << "[";
+        for (size_t i = 0; i < items.size(); i++) {
+            auto elem = items[i];
+            char mark = (i == selected) ? '=' : ' ';
+            std::cout << elem->pts << mark << " ";
+        }
+        std::cout << "] ";
+
+        if (!items.empty()) {
+            std::cout << "pts=" << items[selected]->pts;
+        }
+
+        std::cout << std::endl;
+    }
+
+    void seekNext() {
+        const int last = items.size() - 1;
+        const int distanceToEnd =  last - selected;
+        if (distanceToEnd > deltaMin) {
+            return;
+        }
+
+        if (loadDir < 0 && !items.empty()) {
+            loadDir = 1;
+            auto last = items.back();
+            auto seek = last->pts + last->duration;
+            playLoop.set(loadDir, seek);
+        }
+    }
+
+    void seekPrev() {
+        if (selected > deltaMin) {
+            return;
+        }
+
+        if (loadDir > 0 && !items.empty()) {
+            loadDir = -1;
+            auto first = items.front();
+            auto seek = first->pts - 1;
+            playLoop.set(loadDir, seek);
+        }
+
+    }
+
+    bool addNextWithCheck(RGBFrame* frame) {
+        if (items.empty()) {
+            items.push_back(frame);
+            return true;
+        }
+
+        auto last = items.back();
+        auto maxPts = last->pts + last->duration;
+        if (maxPts == frame->pts) {
+            items.push_back(frame);
+            return true;
+        }
+        
+        //bad pts, need skip frame?
+        return false;
+    }
+    
+    void tryFillNext() {
+        
+        const int last = items.size() - 1;
+        const int distanceToEnd = last - selected;
+        if (distanceToEnd > deltaMin) {
+            return;
+        }
+
+        auto frame = playLoop.next();
+        if (!frame) {
+            return;
+        }
+
+        bool added = addNextWithCheck(frame);
+        if (!added) {
+            framePool.put(frame);
+        }
+
+        while (items.size() > capacity) {
+            auto item = popFront();
+            framePool.put(item);
+            selected--;
+        }
+    }
+    
+    void tryFillPrev() {
+        if (selected > deltaMin) {
+            return;
+        }
+        
+        auto frame = playLoop.next();
+        if (!frame) {
+            return;
+        }
+
+        while (items.size() >= capacity) {
+            auto item = popBack();
+            framePool.put(item);
+        }
+        
+        items.push_front(frame);
+        selected++;
+    }
+
+private:
+    RGBFrame* popFront() {
+        if (items.empty()) {
+            return nullptr;
+        }
+
+        auto result = items[0];
+        items.pop_front();
+        return result;
+    }
+    RGBFrame* popBack() {
+        if (items.empty()) {
+            return nullptr;
+        }
+        
+        auto lastIndex = items.size() - 1;
+        auto result = items[lastIndex];
+        items.pop_back();
+        return result;
+    }
+} frameQ;
 
 
 static GLuint createTexture(int width, int height) {
@@ -119,18 +276,33 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        player.paused = !player.paused;
-        player.needUpdate = false;
+        ps.paused = !ps.paused;
+        ps.nextFrame = 0;
+        
+        if (ps.paused) {    
+            frameQ.print();
+        } else {
+            if (frameQ.loadDir == -1) {
+                frameQ.loadDir = 1;
+                if (!frameQ.items.empty()) {
+                    auto last = frameQ.items.back();
+                    auto seek = last->pts + last->duration;
+                    playLoop.set(frameQ.loadDir, seek);
+                }
+            }
+            
+        }
     }
     else if (key.is(LEFT)) {
-        if (player.paused) {
-            player.needUpdate = true;
-            playLoop.seek(player.pts - 1);
+        if (ps.paused) {
+            ps.nextFrame = -1;
+            frameQ.seekPrev();
         }
     }
     else if (key.is(RIGHT)) {
-        if (player.paused) {
-            player.needUpdate = true;
+        if (ps.paused) {
+            ps.nextFrame = 1;
+            frameQ.seekNext();
         }
     }
 }
@@ -193,7 +365,8 @@ static void initWindow(GLFWwindow* window) {
     glfwSetMouseButtonCallback(window, mouseClick);
     glfwSetCursorPosCallback(window, mouseMove);
     glfwSetScrollCallback(window, mouseScroll);
-    //glfwSwapInterval(1);
+    glfwSetWindowPos(window, 400, 200);
+    glfwSwapInterval(1);
     glfwSetTime(0.0);
 }
 static void initImGui(GLFWwindow* window) {
@@ -223,7 +396,6 @@ static void destroyImGui() {
     ImGui::DestroyContext();
 }
 
-
 int main() {
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
@@ -249,10 +421,11 @@ int main() {
     reshapeScene(windowWidth, windowHeight);
 
     const char* fileName = "C:/Users/Konst/Desktop/k/IMG_3504.MOV";
-    if (!reader.openFile(fileName)) {
+    if (!reader.open(fileName)) {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
+    StreamInfo videoInfo = reader.getStreamInfo();
 
     int frameWidth = reader.decoderContext->width;
     int frameHeight = reader.decoderContext->height;
@@ -260,84 +433,77 @@ int main() {
     GLuint textureId = createTexture(frameWidth, frameHeight);
     render.createFrame(0, textureId, frameWidth, frameHeight);
     render.createFrame(1, textureId, frameWidth, frameHeight);
-    framePool.createFrames(3, frameWidth, frameHeight);
+    framePool.createFrames(10, frameWidth, frameHeight);
     playLoop.start();
 
-    using namespace std::chrono_literals;
+    /*
+    auto fps_t1 = steady_clock::now();
+    auto fps_count = 0;
+    fps_count++;
+        auto fps_t2 = steady_clock::now();
+        auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
+        if (dd > 1000000) {
+            std::cout << fps_count << std::endl;
+            fps_t1 = steady_clock::now();
+            fps_count = 0;
+    }*/
+
     using std::chrono::microseconds;
     using std::chrono::duration_cast;
     using std::chrono::steady_clock;
-
     auto t1 = steady_clock::now();
-    auto fps_t1 = steady_clock::now();
-    auto fps_count = 0;
 
-    StreamInfo videoInfo = reader.getStreamInfo();
     while (!glfwWindowShouldClose(window)) {
 
         {
-            if (player.paused) {
-                if (player.needUpdate) {
+            if (ps.paused) {
 
-                    RGBFrame* frame = playLoop.next();
-                    if (frame) {
+                if (frameQ.loadDir > 0) {
+                    frameQ.tryFillNext();
+                } 
+                else if (frameQ.loadDir < 0) {
+                    frameQ.tryFillPrev();
+                }
+                
+                const RGBFrame* frame =
+                    ps.nextFrame > 0 ? frameQ.next() :
+                    ps.nextFrame < 0 ? frameQ.prev() :
+                    nullptr;
 
-                        /*bool canUpdate = true;
-                            (player.direction > 0) ? (frame->pts > player.pts) :
-                            (player.direction < 0) ? (frame->pts < player.pts) :
-                            false;*/
+                if (frame) {
+                    frameQ.print();
 
-                        //if (canUpdate) {
-                            //std::cout << "update frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
+                    ps.progress = videoInfo.calcProgress(frame->pts);
+                    ps.pts = frame->pts;
+                    ps.dur = frame->duration;
+                    ps.nextFrame = 0;
 
-                            player.progress = videoInfo.calcProgress(frame->pts);
-                            player.pts = frame->pts;
-                            player.dur = frame->duration;
-                            player.needUpdate = false;
-
-                            updateTexture(render.frame[0].textureId, *frame);
-                            updateTexture(render.frame[1].textureId, *frame);
-                        /*}
-                        else {*/
-                            //std::cout << "skip frame_pts=" << frame->pts << " cur_pts=" << player.pts << std::endl;
-                        //}
-
-                        framePool.put(frame);
-                    }
+                    updateTexture(render.frame[0].textureId, *frame);
+                    updateTexture(render.frame[1].textureId, *frame);
                 }
             }
             else {
-                auto t2 = steady_clock::now();
-                auto durationMicros = duration_cast<microseconds>(t2 - t1).count();
-                //auto durationTS = videoInfo.toTS(durationMicros);
-                //if (durationTS > player.dur) { }
+
+                frameQ.tryFillNext();
+
                 // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
-                bool needUpdate = durationMicros * 30us >= 1000000us;
-                if (needUpdate) {
+                auto t2 = steady_clock::now();
+                auto dt = duration_cast<microseconds>(t2 - t1).count();
+                if (1000000 <= dt * 30) {
                     t1 = t2;
 
-                    RGBFrame* frame = playLoop.next();
+                    const RGBFrame* frame = frameQ.next();
                     if (frame) {
-                        if (frame->pts > player.pts) {
-                            player.progress = videoInfo.calcProgress(frame->pts);
-                            player.pts = frame->pts;
-                            player.dur = frame->duration;
+                        ps.progress = videoInfo.calcProgress(frame->pts);
+                        ps.pts = frame->pts;
+                        ps.dur = frame->duration;
+                        ps.nextFrame = 0;
 
-                            updateTexture(render.frame[0].textureId, *frame);
-                            updateTexture(render.frame[1].textureId, *frame);
-                        }
-                        framePool.put(frame);
+                        updateTexture(render.frame[0].textureId, *frame);
+                        updateTexture(render.frame[1].textureId, *frame);
                     }
                 }
             }
-            /* fps_count++;
-                auto fps_t2 = steady_clock::now();
-                auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
-                if (dd > 1000000) {
-                    std::cout << fps_count << std::endl;
-                    fps_t1 = steady_clock::now();
-                    fps_count = 0;
-                }*/
         }
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -359,9 +525,9 @@ int main() {
             float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
             ImGui::PushItemWidth(itemWidth);
-            bool changed1 = ImGui::SliderFloat("##slider1", &player.progress, 0.0f, 100.0f, "%.f%%", flags);
+            bool changed1 = ImGui::SliderFloat("##slider1", &ps.progress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::SameLine(0.f, style.WindowPadding.x);
-            bool changed2 = ImGui::SliderFloat("##slider2", &player.progress, 0.0f, 100.0f, "%.f%%", flags);
+            bool changed2 = ImGui::SliderFloat("##slider2", &ps.progress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::PopItemWidth();
 
            /* if (progress != progress_old) {
