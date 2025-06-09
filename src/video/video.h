@@ -6,11 +6,12 @@
 #include "ffmpeg.h"
 #include "frame.h"
 
+using std::mutex;
 using std::vector;
 
 class FramePool {
-    std::mutex mtx;
-    std::vector<RGBFrame*> items;
+    mutex mtx;
+    vector<RGBFrame*> items;
     int frameWidth = 0;
     int frameHeight = 0;
 
@@ -19,18 +20,8 @@ public:
     ~FramePool();
     void createFrames(size_t count, int w, int h);
     void put(RGBFrame* item);
-    void put(const std::vector<RGBFrame*>& frames);
+    void put(const vector<RGBFrame*>& frames);
     RGBFrame* get();
-};
-
-struct RGBConverter {
-    SwsContext* swsContext = nullptr;
-    uint8_t* destFrame[AV_NUM_DATA_POINTERS] = { nullptr };
-    int destLineSize[AV_NUM_DATA_POINTERS] = { 0 };
-
-    bool createContext(const AVCodecContext* decoder);
-    void destroyContext();
-    int toRGB(const AVFrame* frame, RGBFrame& result);
 };
 
 struct StreamInfo {
@@ -49,6 +40,16 @@ struct StreamInfo {
     }
 };
 
+struct FrameConverter {
+    SwsContext* swsContext = nullptr;
+    uint8_t* destFrame[AV_NUM_DATA_POINTERS] = { nullptr };
+    int destLineSize[AV_NUM_DATA_POINTERS] = { 0 };
+
+    bool createContext(const AVCodecContext* decoder);
+    void destroyContext();
+    int toRGB(const AVFrame* frame, RGBFrame& result);
+};
+
 struct VideoReader {
     AVFormatContext* formatContext = nullptr;
     AVCodecContext* decoderContext = nullptr;
@@ -56,7 +57,7 @@ struct VideoReader {
     int videoStreamIndex = -1;
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
-    RGBConverter converter;
+    FrameConverter converter;
 
     VideoReader();
     ~VideoReader();

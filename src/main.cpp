@@ -108,9 +108,7 @@ struct FrameQueue {
     }
 
     void seekNext() {
-        const int last = items.size() - 1;
-        const int distanceToEnd =  last - selected;
-        if (distanceToEnd > deltaMin) {
+        if (tooFarFromEnd()) {
             return;
         }
 
@@ -123,7 +121,7 @@ struct FrameQueue {
     }
 
     void seekPrev() {
-        if (selected > deltaMin) {
+        if (tooFarFromBegin()) {
             return;
         }
 
@@ -133,89 +131,119 @@ struct FrameQueue {
             auto seek = first->pts - 1;
             playLoop.set(loadDir, seek);
         }
-
     }
 
-    bool addNextWithCheck(RGBFrame* frame) {
-        if (items.empty()) {
-            items.push_back(frame);
-            return true;
-        }
-
-        auto last = items.back();
-        auto maxPts = last->pts + last->duration;
-        if (maxPts == frame->pts) {
-            items.push_back(frame);
-            return true;
-        }
-        
-        //bad pts, need skip frame?
-        return false;
-    }
-    
-    void tryFillNext() {
-        
-        const int last = items.size() - 1;
-        const int distanceToEnd = last - selected;
-        if (distanceToEnd > deltaMin) {
+    void tryFill() {
+        if (loadDir > 0) {
+            tryFillBack();
             return;
         }
-
-        auto frame = playLoop.next();
-        if (!frame) {
+        if (loadDir < 0) {
+            tryFillFront();
             return;
-        }
-
-        bool added = addNextWithCheck(frame);
-        if (!added) {
-            framePool.put(frame);
-        }
-
-        while (items.size() > capacity) {
-            auto item = popFront();
-            framePool.put(item);
-            selected--;
-        }
-    }
-    
-    void tryFillPrev() {
-        if (selected > deltaMin) {
-            return;
-        }
-        
-        auto frame = playLoop.next();
-        if (!frame) {
-            return;
-        }
-
-        while (items.size() >= capacity) {
-            auto item = popBack();
-            framePool.put(item);
-        }
-        
-        items.push_front(frame);
-        selected++;
+        } 
     }
 
 private:
-    RGBFrame* popFront() {
-        if (items.empty()) {
-            return nullptr;
+    bool tooFarFromBegin() const {
+        return selected > deltaMin;
+    }
+    bool tooFarFromEnd() const {
+        return selected + deltaMin + 1 < items.size();
+    }
+    void tryFillBack() {
+        if (tooFarFromEnd()) {
+            return;
         }
 
-        auto result = items[0];
-        items.pop_front();
-        return result;
+        auto frame = playLoop.next();
+        if (!frame) {
+            return;
+        }
+
+        bool added = pushBack(frame);
+        if (!added) {
+            framePool.put(frame);
+            return;
+        }
+
+        auto front = popFront();
+        framePool.put(front);
+    }
+    void tryFillFront() {
+        if (tooFarFromBegin()) {
+            return;
+        }
+
+        auto frame = playLoop.next();
+        if (!frame) {
+            return;
+        }
+
+        bool added = pushFront(frame);
+        if (!added) {
+            framePool.put(frame);
+            return;
+        }
+
+        auto back = popBack();
+        framePool.put(back);
+    }
+    bool pushBack(RGBFrame* frame) {
+        if (items.empty()) {
+            items.push_back(frame);
+            return true;
+        }
+
+        auto back = items.back();
+        auto backPts = back->pts + back->duration;
+        if (backPts == frame->pts) {
+            items.push_back(frame);
+            return true;
+        }
+
+        //bad pts, skip frame
+        return false;
+    }
+    bool pushFront(RGBFrame* frame) {
+        if (items.empty()) {
+            items.push_front(frame);
+            selected++;
+            return true;
+        }
+
+        auto front = items.front();
+        auto framePts = frame->pts + frame->duration;
+        if (framePts == front->pts) {
+            items.push_front(frame);
+            selected++;
+            return true;
+        }
+
+        //bad pts, skip frame
+        return false;
+        
     }
     RGBFrame* popBack() {
-        if (items.empty()) {
-            return nullptr;
+        bool tooBigQueue = items.size() > capacity;
+        bool lastIsNotUsed = selected < items.size() - 1;
+        if (tooBigQueue && lastIsNotUsed) {
+            auto back = items.back();
+            items.pop_back();
+            return back;
         }
-        
-        auto lastIndex = items.size() - 1;
-        auto result = items[lastIndex];
-        items.pop_back();
-        return result;
+        return nullptr;
+    }
+    RGBFrame* popFront() {
+        bool tooBigQueue = items.size() > capacity;
+        bool firstIsNotUsed = selected > 0;
+        if (tooBigQueue && firstIsNotUsed) {
+            auto front = items.front();
+            items.pop_front();
+            selected--;
+            return front;
+        }
+        return nullptr;
     }
 } frameQ;
 
@@ -457,13 +485,7 @@ int main() {
 
         {
             if (ps.paused) {
-
-                if (frameQ.loadDir > 0) {
-                    frameQ.tryFillNext();
-                } 
-                else if (frameQ.loadDir < 0) {
-                    frameQ.tryFillPrev();
-                }
+                frameQ.tryFill();
                 
                 const RGBFrame* frame =
                     ps.nextFrame > 0 ? frameQ.next() :
@@ -472,10 +494,9 @@ int main() {
 
                 if (frame) {
                     frameQ.print();
-
-                    ps.progress = videoInfo.calcProgress(frame->pts);
                     ps.pts = frame->pts;
                     ps.dur = frame->duration;
+                    ps.progress = videoInfo.calcProgress(frame->pts);
                     ps.nextFrame = 0;
 
                     updateTexture(render.frame[0].textureId, *frame);
@@ -484,7 +505,7 @@ int main() {
             }
             else {
 
-                frameQ.tryFillNext();
+                frameQ.tryFill();
 
                 // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
                 auto t2 = steady_clock::now();
@@ -494,9 +515,9 @@ int main() {
 
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
-                        ps.progress = videoInfo.calcProgress(frame->pts);
                         ps.pts = frame->pts;
                         ps.dur = frame->duration;
+                        ps.progress = videoInfo.calcProgress(frame->pts);
                         ps.nextFrame = 0;
 
                         updateTexture(render.frame[0].textureId, *frame);

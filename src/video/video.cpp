@@ -58,7 +58,7 @@ RGBFrame* FramePool::get() {
     return last;
 }
 
-bool RGBConverter::createContext(const AVCodecContext* decoder) {
+bool FrameConverter::createContext(const AVCodecContext* decoder) {
     const auto& width = decoder->width;
     const auto& height = decoder->height;
     const auto& pixFmt = decoder->pix_fmt;
@@ -70,13 +70,13 @@ bool RGBConverter::createContext(const AVCodecContext* decoder) {
     
     return swsContext;
 }
-void RGBConverter::destroyContext() {
+void FrameConverter::destroyContext() {
     if (swsContext) {
         sws_freeContext(swsContext);
         swsContext = nullptr;
     }
 }
-int RGBConverter::toRGB(const AVFrame* frame, RGBFrame& result) {
+int FrameConverter::toRGB(const AVFrame* frame, RGBFrame& result) {
     destFrame[0] = result.pixels;
     destLineSize[0] = 3 * frame->width;
     int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
