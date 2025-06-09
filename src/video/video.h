@@ -105,5 +105,6 @@ public:
     void stop();
     void set(int8_t dir, int64_t pts);
     RGBFrame* next();
+    void putUnused(RGBFrame* frame);
 };
 

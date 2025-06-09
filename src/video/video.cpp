@@ -428,3 +428,7 @@ PlayLoop::State PlayLoop::copyState() {
     sharedState.seekPts = -1;
     return copy;
 }
+
+void PlayLoop::putUnused(RGBFrame* frame) {
+    framePool.put(frame);
+}

@@ -63,10 +63,8 @@ PlayLoop playLoop(framePool, reader);
 PlayState ps;
 
 struct FrameQueue {
-
     const size_t capacity = 5;
     const size_t deltaMin = 1;
-
     std::deque<RGBFrame*> items;
     size_t selected = -1;
     int8_t loadDir = 1;
@@ -133,13 +131,13 @@ struct FrameQueue {
         }
     }
 
-    void tryFill() {
+    void tryFill(PlayLoop& frameProvider) {
         if (loadDir > 0) {
-            tryFillBack();
+            tryFillBack(frameProvider);
             return;
         }
         if (loadDir < 0) {
-            tryFillFront();
+            tryFillFront(frameProvider);
             return;
         } 
     }
@@ -151,43 +149,43 @@ private:
     bool tooFarFromEnd() const {
         return selected + deltaMin + 1 < items.size();
     }
-    void tryFillBack() {
+    void tryFillBack(PlayLoop& frameProvider) {
         if (tooFarFromEnd()) {
             return;
         }
 
-        auto frame = playLoop.next();
+        auto frame = frameProvider.next();
         if (!frame) {
             return;
         }
 
         bool added = pushBack(frame);
         if (!added) {
-            framePool.put(frame);
+            frameProvider.putUnused(frame);
             return;
         }
 
         auto front = popFront();
-        framePool.put(front);
+        frameProvider.putUnused(front);
     }
-    void tryFillFront() {
+    void tryFillFront(PlayLoop& frameProvider) {
         if (tooFarFromBegin()) {
             return;
         }
 
-        auto frame = playLoop.next();
+        auto frame = frameProvider.next();
         if (!frame) {
             return;
         }
 
         bool added = pushFront(frame);
         if (!added) {
-            framePool.put(frame);
+            frameProvider.putUnused(frame);
             return;
         }
 
         auto back = popBack();
-        framePool.put(back);
+        frameProvider.putUnused(back);
     }
     bool pushBack(RGBFrame* frame) {
         if (items.empty()) {
@@ -484,9 +482,9 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
 
         {
-            if (ps.paused) {
-                frameQ.tryFill();
-                
+            frameQ.tryFill(playLoop);
+
+            if (ps.paused) {    
                 const RGBFrame* frame =
                     ps.nextFrame > 0 ? frameQ.next() :
                     ps.nextFrame < 0 ? frameQ.prev() :
@@ -504,9 +502,6 @@ int main() {
                 }
             }
             else {
-
-                frameQ.tryFill();
-
                 // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
                 auto t2 = steady_clock::now();
                 auto dt = duration_cast<microseconds>(t2 - t1).count();
