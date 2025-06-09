@@ -73,8 +73,8 @@ private:
     bool readRaw() const;
     bool convert(const AVFrame* frame, RGBFrame& result);
 };
-
-class PlayLoop {
+           
+class FrameLoader {
     std::thread t;
     std::mutex mtx;
     std::condition_variable cv;
@@ -87,7 +87,6 @@ class PlayLoop {
         int64_t seekPts = -1;
     } sharedState;
 
-    
     RGBFrame* result = nullptr;
     vector<RGBFrame*> prevCache;
     int64_t lastPts = -1;
@@ -99,8 +98,8 @@ class PlayLoop {
     State copyState();
 
 public:
-    PlayLoop(FramePool& pool, VideoReader& reader);
-    ~PlayLoop();
+    FrameLoader(FramePool& pool, VideoReader& reader);
+    ~FrameLoader();
     void start();
     void stop();
     void set(int8_t dir, int64_t pts);

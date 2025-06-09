@@ -249,28 +249,34 @@ StreamInfo VideoReader::getStreamInfo() const {
 }
 
 
-PlayLoop::PlayLoop(FramePool& pool, VideoReader& reader) :
+FrameLoader::FrameLoader(FramePool& pool, VideoReader& reader) :
     framePool(pool),
     reader(reader) { }
-PlayLoop::~PlayLoop() {
+FrameLoader::~FrameLoader() {
     if (t.joinable()) {
         t.join();
     }
 }
-void PlayLoop::start() {
+void FrameLoader::start() {
     finished.store(false);
+    {
+        auto lock = std::lock_guard(mtx);
+    }
     t = std::thread([this]() {
         playback();
     });
 }
-void PlayLoop::stop() {
+void FrameLoader::stop() {
     finished.store(true);
+    {
+        auto lock = std::lock_guard(mtx);
+    }
     cv.notify_one();
     if (t.joinable()) {
         t.join();
     }
 }
-void PlayLoop::set(int8_t dir, int64_t pts) {
+void FrameLoader::set(int8_t dir, int64_t pts) {
     auto lock = std::lock_guard(mtx);
 
     //set state
@@ -285,7 +291,7 @@ void PlayLoop::set(int8_t dir, int64_t pts) {
     //wake up background thread
     cv.notify_one();
 }
-RGBFrame* PlayLoop::next() {
+RGBFrame* FrameLoader::next() {
     auto lock = std::lock_guard(mtx);
     if (result == nullptr) {
         return nullptr;
@@ -297,7 +303,7 @@ RGBFrame* PlayLoop::next() {
 
     return tmp;
 }
-void PlayLoop::playback() {
+void FrameLoader::playback() {
 
     while (canRead()) {
         State copy = copyState();
@@ -308,14 +314,14 @@ void PlayLoop::playback() {
     }
     std::cout << "stopped" << std::endl;
 }
-bool PlayLoop::canRead() {
+bool FrameLoader::canRead() {
     auto lock = std::unique_lock(mtx);
     while (!finished && result) {
         cv.wait(lock);
     }
     return !finished;
 }
-RGBFrame* PlayLoop::readFrame(int8_t dir, int64_t seekPts) {
+RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
 
     if (dir > 0) {
         if (seekPts >= 0) {
@@ -417,18 +423,17 @@ RGBFrame* PlayLoop::readFrame(int8_t dir, int64_t seekPts) {
 
     return nullptr;
 }
-void PlayLoop::saveResult(RGBFrame* frame) {
+void FrameLoader::saveResult(RGBFrame* frame) {
     auto lock = std::unique_lock(mtx);
     result = frame;
     lastPts = frame->pts;
 }
-PlayLoop::State PlayLoop::copyState() {
+FrameLoader::State FrameLoader::copyState() {
     auto lock = std::lock_guard(mtx);
     auto copy = sharedState;
     sharedState.seekPts = -1;
     return copy;
 }
-
-void PlayLoop::putUnused(RGBFrame* frame) {
+void FrameLoader::putUnused(RGBFrame* frame) {
     framePool.put(frame);
 }

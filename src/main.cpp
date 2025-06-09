@@ -50,24 +50,26 @@ struct PlayState {
     float progress = 0.f;
     int64_t pts = 0;
     int64_t dur = 0;
-
-    bool paused = false;
-    int nextFrame = 0; // when paused
 };
 
 Render render;
 SceneSize scene;
 VideoReader reader;
-FramePool framePool;
-PlayLoop playLoop(framePool, reader);
+FramePool framePool; //todo: move inside FrameLoader?
+FrameLoader loader(framePool, reader);
 PlayState ps;
 
 struct FrameQueue {
     const size_t capacity = 5;
     const size_t deltaMin = 1;
+
     std::deque<RGBFrame*> items;
     size_t selected = -1;
     int8_t loadDir = 1;
+    
+    bool paused = false;
+    int nextPausedFrame = 0;
+
 
     const RGBFrame* next() {
        
@@ -105,39 +107,51 @@ struct FrameQueue {
         std::cout << std::endl;
     }
 
-    void seekNext() {
+    void seekLast(FrameLoader& loader) {
+        nextPausedFrame = 0;
+
+        if (loadDir < 0) {
+            loadDir = 1;
+            auto seekPos = lastSeekPosition();
+            loader.set(loadDir, seekPos);
+        }
+    }
+
+    void seekNextPaused(FrameLoader& loader) {
+        nextPausedFrame = 1;
+        
         if (tooFarFromEnd()) {
             return;
         }
 
-        if (loadDir < 0 && !items.empty()) {
+        if (loadDir < 0) {
             loadDir = 1;
-            auto last = items.back();
-            auto seek = last->pts + last->duration;
-            playLoop.set(loadDir, seek);
+            auto seekPos = lastSeekPosition();
+            loader.set(loadDir, seekPos);
         }
     }
 
-    void seekPrev() {
+    void seekPrevPaused(FrameLoader& loader) {
+        nextPausedFrame = -1;
+        
         if (tooFarFromBegin()) {
             return;
         }
 
-        if (loadDir > 0 && !items.empty()) {
+        if (loadDir > 0) {
             loadDir = -1;
-            auto first = items.front();
-            auto seek = first->pts - 1;
-            playLoop.set(loadDir, seek);
+            auto seekPos = firstSeekPosition();
+            loader.set(loadDir, seekPos);
         }
     }
 
-    void tryFill(PlayLoop& frameProvider) {
+    void tryFillFrom(FrameLoader& loader) {
         if (loadDir > 0) {
-            tryFillBack(frameProvider);
+            tryFillBack(loader);
             return;
         }
         if (loadDir < 0) {
-            tryFillFront(frameProvider);
+            tryFillFront(loader);
             return;
         } 
     }
@@ -149,43 +163,43 @@ private:
     bool tooFarFromEnd() const {
         return selected + deltaMin + 1 < items.size();
     }
-    void tryFillBack(PlayLoop& frameProvider) {
+    void tryFillBack(FrameLoader& loader) {
         if (tooFarFromEnd()) {
             return;
         }
 
-        auto frame = frameProvider.next();
+        auto frame = loader.next();
         if (!frame) {
             return;
         }
 
         bool added = pushBack(frame);
         if (!added) {
-            frameProvider.putUnused(frame);
+            loader.putUnused(frame);
             return;
         }
 
         auto front = popFront();
-        frameProvider.putUnused(front);
+        loader.putUnused(front);
     }
-    void tryFillFront(PlayLoop& frameProvider) {
+    void tryFillFront(FrameLoader& loader) {
         if (tooFarFromBegin()) {
             return;
         }
 
-        auto frame = frameProvider.next();
+        auto frame = loader.next();
         if (!frame) {
             return;
         }
 
         bool added = pushFront(frame);
         if (!added) {
-            frameProvider.putUnused(frame);
+            loader.putUnused(frame);
             return;
         }
 
         auto back = popBack();
-        frameProvider.putUnused(back);
+        loader.putUnused(back);
     }
     bool pushBack(RGBFrame* frame) {
         if (items.empty()) {
@@ -243,6 +257,23 @@ private:
         }
         return nullptr;
     }
+    int64_t lastSeekPosition() {
+        if (items.empty()) {
+            return 0;
+        }
+
+        auto last = items.back();
+        return last->pts + last->duration;
+    }
+    int64_t firstSeekPosition() {
+        if (items.empty()) {
+            return 0;
+        }
+
+        auto front = items.front();
+        return front->pts - 1;
+    }
+
 } frameQ;
 
 
@@ -302,33 +333,23 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        ps.paused = !ps.paused;
-        ps.nextFrame = 0;
+        frameQ.paused = !frameQ.paused;
+        frameQ.nextPausedFrame = 0;
         
-        if (ps.paused) {    
+        if (frameQ.paused) {
             frameQ.print();
         } else {
-            if (frameQ.loadDir == -1) {
-                frameQ.loadDir = 1;
-                if (!frameQ.items.empty()) {
-                    auto last = frameQ.items.back();
-                    auto seek = last->pts + last->duration;
-                    playLoop.set(frameQ.loadDir, seek);
-                }
-            }
-            
+            frameQ.seekLast(loader);
         }
     }
     else if (key.is(LEFT)) {
-        if (ps.paused) {
-            ps.nextFrame = -1;
-            frameQ.seekPrev();
+        if (frameQ.paused) {
+            frameQ.seekPrevPaused(loader);
         }
     }
     else if (key.is(RIGHT)) {
-        if (ps.paused) {
-            ps.nextFrame = 1;
-            frameQ.seekNext();
+        if (frameQ.paused) {
+            frameQ.seekNextPaused(loader);
         }
     }
 }
@@ -460,7 +481,7 @@ int main() {
     render.createFrame(0, textureId, frameWidth, frameHeight);
     render.createFrame(1, textureId, frameWidth, frameHeight);
     framePool.createFrames(10, frameWidth, frameHeight);
-    playLoop.start();
+    loader.start();
 
     /*
     auto fps_t1 = steady_clock::now();
@@ -482,20 +503,21 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
 
         {
-            frameQ.tryFill(playLoop);
+            frameQ.tryFillFrom(loader);
 
-            if (ps.paused) {    
+            if (frameQ.paused) {
                 const RGBFrame* frame =
-                    ps.nextFrame > 0 ? frameQ.next() :
-                    ps.nextFrame < 0 ? frameQ.prev() :
+                    frameQ.nextPausedFrame > 0 ? frameQ.next() : //todo: frameQ.nextFrame = 0 in the frameQ.next() ?
+                    frameQ.nextPausedFrame < 0 ? frameQ.prev() : //todo: --||--?
                     nullptr;
 
                 if (frame) {
                     frameQ.print();
+                    frameQ.nextPausedFrame = 0;
+
                     ps.pts = frame->pts;
                     ps.dur = frame->duration;
                     ps.progress = videoInfo.calcProgress(frame->pts);
-                    ps.nextFrame = 0;
 
                     updateTexture(render.frame[0].textureId, *frame);
                     updateTexture(render.frame[1].textureId, *frame);
@@ -513,7 +535,6 @@ int main() {
                         ps.pts = frame->pts;
                         ps.dur = frame->duration;
                         ps.progress = videoInfo.calcProgress(frame->pts);
-                        ps.nextFrame = 0;
 
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
@@ -565,7 +586,7 @@ int main() {
         glfwPollEvents();
     }
 
-    playLoop.stop();
+    loader.stop();
     render.destroy();
     destroyImGui();
     glfwTerminate();
