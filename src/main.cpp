@@ -273,6 +273,32 @@ private:
 
 } frameQ;
 
+struct FpsCounter {
+    using time_point = std::chrono::steady_clock::time_point;
+    time_point last;
+    size_t value;
+
+    FpsCounter() {
+        using std::chrono::steady_clock;
+        last = std::chrono::steady_clock::now();
+        value = 0;
+    }
+    void count() {
+        using std::chrono::microseconds;
+        using std::chrono::steady_clock;
+        using std::chrono::duration_cast;
+
+        value++;
+
+        auto now = steady_clock::now();
+        auto delta = duration_cast<microseconds>(now - last).count();
+        if (delta > 1000000) {
+            std::cout << "fps=" << value << std::endl;
+            last = now;
+            value = 0;
+        }
+    }
+};
 
 static GLuint createTexture(int width, int height) {
 
@@ -479,13 +505,9 @@ int main() {
     framePool.createFrames(10, frameWidth, frameHeight);
     loader.start();
 
-    using std::chrono::microseconds;
-    using std::chrono::duration_cast;
-    using std::chrono::steady_clock;
-    auto t1 = steady_clock::now();
-
-    auto fps_t1 = steady_clock::now();
-    auto fps_count = 0;
+    
+    FpsCounter fps;
+    auto t1 = std::chrono::steady_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -510,33 +532,28 @@ int main() {
                 }
             }
             else if (!frameQ.paused) {
+
+                using std::chrono::microseconds;
+                using std::chrono::duration_cast;
+                using std::chrono::steady_clock;
                 auto t2 = steady_clock::now();
                 auto deltaMicros = duration_cast<microseconds>(t2 - t1).count();
                 if (deltaMicros > ps.duration) {
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
                         auto offset = deltaMicros - ps.duration;
-                        auto durationMicros = videoInfo.toMicros(frame->duration);
-                        if (offset < durationMicros) {
+                        auto nextDuration = videoInfo.toMicros(frame->duration);
+                        if (offset < nextDuration) {
                             t1 = t2 - microseconds(offset);
                         } else {
                             t1 = t2;
                         }
 
-                        ps.duration = durationMicros;
+                        ps.duration = nextDuration;
                         ps.progress = videoInfo.calcProgress(frame->pts);
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
-                        
-                        /*fps_count++;
-
-                        auto fps_t2 = steady_clock::now();
-                        auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
-                        if (dd > 1000000) {
-                            std::cout << fps_count << std::endl;
-                            fps_t1 = steady_clock::now();
-                            fps_count = 0;
-                        }*/
+                        fps.count();
                     }
                 }
             }
