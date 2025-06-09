@@ -48,8 +48,7 @@ struct SceneSize {
 
 struct PlayState {
     float progress = 0.f;
-    int64_t pts = 0;
-    int64_t dur = 0;
+    int64_t duration = 0;
 };
 
 Render render;
@@ -480,22 +479,13 @@ int main() {
     framePool.createFrames(10, frameWidth, frameHeight);
     loader.start();
 
-    /*
-    auto fps_t1 = steady_clock::now();
-    auto fps_count = 0;
-    fps_count++;
-        auto fps_t2 = steady_clock::now();
-        auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
-        if (dd > 1000000) {
-            std::cout << fps_count << std::endl;
-            fps_t1 = steady_clock::now();
-            fps_count = 0;
-    }*/
-
     using std::chrono::microseconds;
     using std::chrono::duration_cast;
     using std::chrono::steady_clock;
     auto t1 = steady_clock::now();
+
+    auto fps_t1 = steady_clock::now();
+    auto fps_count = 0;
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -512,8 +502,7 @@ int main() {
                     frameQ.print();
                     frameQ.nextFrame = 0;
 
-                    ps.pts = frame->pts;
-                    ps.dur = frame->duration;
+                    ps.duration = videoInfo.toMicros(frame->duration);
                     ps.progress = videoInfo.calcProgress(frame->pts);
 
                     updateTexture(render.frame[0].textureId, *frame);
@@ -521,20 +510,33 @@ int main() {
                 }
             }
             else if (!frameQ.paused) {
-                // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
                 auto t2 = steady_clock::now();
-                auto dt = duration_cast<microseconds>(t2 - t1).count();
-                if (1000000 <= dt * 30) {
-                    t1 = t2;
-
+                auto deltaMicros = duration_cast<microseconds>(t2 - t1).count();
+                if (deltaMicros > ps.duration) {
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
-                        ps.pts = frame->pts;
-                        ps.dur = frame->duration;
-                        ps.progress = videoInfo.calcProgress(frame->pts);
+                        auto offset = deltaMicros - ps.duration;
+                        auto durationMicros = videoInfo.toMicros(frame->duration);
+                        if (offset < durationMicros) {
+                            t1 = t2 - microseconds(offset);
+                        } else {
+                            t1 = t2;
+                        }
 
+                        ps.duration = durationMicros;
+                        ps.progress = videoInfo.calcProgress(frame->pts);
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
+                        
+                        /*fps_count++;
+
+                        auto fps_t2 = steady_clock::now();
+                        auto dd = duration_cast<microseconds>(fps_t2 - fps_t1).count();
+                        if (dd > 1000000) {
+                            std::cout << fps_count << std::endl;
+                            fps_t1 = steady_clock::now();
+                            fps_count = 0;
+                        }*/
                     }
                 }
             }

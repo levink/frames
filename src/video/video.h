@@ -38,6 +38,11 @@ struct StreamInfo {
         if (value > 100.f) return 100.f;
         return value;
     }
+    int64_t toMicros(int64_t pts) const {
+        auto num = pts * time_base.num * 1000000;
+        auto den = time_base.den;
+        return num / den;
+    }
 };
 
 struct FrameConverter {
