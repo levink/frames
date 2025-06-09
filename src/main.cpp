@@ -68,25 +68,23 @@ struct FrameQueue {
     int8_t loadDir = 1;
     
     bool paused = false;
-    int nextPausedFrame = 0;
+    int nextFrame = 0; //when paused
 
 
     const RGBFrame* next() {
-       
-        if (items.empty() || selected + 1 == items.size()) {
+        if (items.empty() ||  selected + 1 >= items.size()) {
             return nullptr;
         }
-
+        
         selected++;
         return items[selected];
     }    
 
     const RGBFrame* prev() {
-        constexpr int first = 0;
-        if (items.empty() || selected == first) {
+        if (items.empty() || selected == 0) {
             return nullptr;
         }
-        
+
         selected--;
         return items[selected];
     }
@@ -107,8 +105,8 @@ struct FrameQueue {
         std::cout << std::endl;
     }
 
-    void seekLast(FrameLoader& loader) {
-        nextPausedFrame = 0;
+    void play(FrameLoader& loader) {
+        nextFrame = 0;
 
         if (loadDir < 0) {
             loadDir = 1;
@@ -117,8 +115,8 @@ struct FrameQueue {
         }
     }
 
-    void seekNextPaused(FrameLoader& loader) {
-        nextPausedFrame = 1;
+    void seekNextFrame(FrameLoader& loader) {
+        nextFrame = 1;
         
         if (tooFarFromEnd()) {
             return;
@@ -131,8 +129,8 @@ struct FrameQueue {
         }
     }
 
-    void seekPrevPaused(FrameLoader& loader) {
-        nextPausedFrame = -1;
+    void seekPrevFrame(FrameLoader& loader) {
+        nextFrame = -1;
         
         if (tooFarFromBegin()) {
             return;
@@ -145,7 +143,7 @@ struct FrameQueue {
         }
     }
 
-    void tryFillFrom(FrameLoader& loader) {
+    void fillFrom(FrameLoader& loader) {
         if (loadDir > 0) {
             tryFillBack(loader);
             return;
@@ -334,22 +332,21 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(SPACE)) {
         frameQ.paused = !frameQ.paused;
-        frameQ.nextPausedFrame = 0;
-        
         if (frameQ.paused) {
             frameQ.print();
+            frameQ.nextFrame = 0;
         } else {
-            frameQ.seekLast(loader);
+            frameQ.play(loader);
         }
     }
     else if (key.is(LEFT)) {
         if (frameQ.paused) {
-            frameQ.seekPrevPaused(loader);
+            frameQ.seekPrevFrame(loader);
         }
     }
     else if (key.is(RIGHT)) {
         if (frameQ.paused) {
-            frameQ.seekNextPaused(loader);
+            frameQ.seekNextFrame(loader);
         }
     }
 }
@@ -503,17 +500,17 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
 
         {
-            frameQ.tryFillFrom(loader);
+            frameQ.fillFrom(loader);
 
-            if (frameQ.paused) {
+            if (frameQ.paused && frameQ.nextFrame) {
                 const RGBFrame* frame =
-                    frameQ.nextPausedFrame > 0 ? frameQ.next() : //todo: frameQ.nextFrame = 0 in the frameQ.next() ?
-                    frameQ.nextPausedFrame < 0 ? frameQ.prev() : //todo: --||--?
+                    frameQ.nextFrame > 0 ? frameQ.next() :
+                    frameQ.nextFrame < 0 ? frameQ.prev() :
                     nullptr;
 
                 if (frame) {
                     frameQ.print();
-                    frameQ.nextPausedFrame = 0;
+                    frameQ.nextFrame = 0;
 
                     ps.pts = frame->pts;
                     ps.dur = frame->duration;
@@ -523,7 +520,7 @@ int main() {
                     updateTexture(render.frame[1].textureId, *frame);
                 }
             }
-            else {
+            else if (!frameQ.paused) {
                 // TODO: this code is for 30 fps. Need more general solution based on (pts + dur)
                 auto t2 = steady_clock::now();
                 auto dt = duration_cast<microseconds>(t2 - t1).count();

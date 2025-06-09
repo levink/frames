@@ -370,13 +370,13 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
             }
             
             size_t writeIndex = 0;
-            bool found = false;
+            bool foundInCache = false;
             auto frame = prevCache[writeIndex];
             while (reader.read(*frame)) {
                 auto min = frame->pts;
                 auto max = frame->pts + frame->duration;
                 if (min <= seekPts && seekPts < max) {
-                    found = true;
+                    foundInCache = true;
                     break;
                 }
                 if (seekPts < min) {
@@ -386,11 +386,8 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
                 frame = prevCache[writeIndex];
             }
 
-            if (found) {
-                /*
-                    cache.clearUnused();
-                    cache.sortByPTS();
-                */
+            if (foundInCache) {
+                // cache.clearUnused();
                 for (size_t i = 0; i < prevCache.size(); i++) {
                     if (prevCache[i]->pts == -1) {
                         framePool.put(prevCache[i]);
@@ -401,6 +398,7 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
                     return item == nullptr;
                 }), prevCache.end());
 
+                // cache.sortByPTS();
                 std::sort(prevCache.begin(), prevCache.end(), [](RGBFrame* left, RGBFrame* right) {
                     return left->pts < right->pts;
                 });
