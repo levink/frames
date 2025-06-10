@@ -281,8 +281,7 @@ StreamInfo VideoReader::getStreamInfo() const {
 }
 
 
-FrameLoader::FrameLoader(FramePool& pool, VideoReader& reader) :
-    pool(pool),
+FrameLoader::FrameLoader(VideoReader& reader) :
     reader(reader) { }
 FrameLoader::~FrameLoader() {
     if (t.joinable()) {
@@ -312,12 +311,12 @@ void FrameLoader::stop() {
         t.join();
     }
 }
-void FrameLoader::set(int8_t dir, int64_t pts) {
+void FrameLoader::seek(int8_t loadDir, int64_t seekPts) {
     auto lock = std::lock_guard(mtx);
 
     //set state
-    sharedState.dir = dir;
-    sharedState.seekPts = pts;
+    sharedState.loadDir = loadDir;
+    sharedState.seekPts = seekPts;
 
     //flush
     auto frame = result;
@@ -330,7 +329,7 @@ void FrameLoader::set(int8_t dir, int64_t pts) {
 void FrameLoader::playback() {
     while (canWork()) {
         auto state = copyState();
-        auto frame = readFrame(state.dir, state.seekPts);
+        auto frame = readFrame(state);
         saveResult(frame, state);
     }
     std::cout << "stopped" << std::endl;
@@ -347,9 +346,10 @@ FrameLoader::State FrameLoader::copyState() {
     auto copy = sharedState;
     return copy;
 }
-void FrameLoader::saveResult(RGBFrame* frame, State state) {
+void FrameLoader::saveResult(RGBFrame* frame, State workState) {
     auto lock = std::lock_guard(mtx);
-    if (state != sharedState) {
+    if (workState != sharedState) {
+        /* result is not actual because sharedState changed during the read */
         pool.put(frame);
         return;
     }
@@ -363,9 +363,12 @@ void FrameLoader::saveResult(RGBFrame* frame, State state) {
         lastPts = frame->pts;
     }
 }
-RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
+RGBFrame* FrameLoader::readFrame(const State& state) {
 
-    if (dir > 0) {
+    auto loadDir = state.loadDir;
+    auto seekPts = state.seekPts;
+
+    if (loadDir > 0) {
         if (seekPts >= 0) {
 
             bool ok = reader.seek(seekPts);
@@ -393,7 +396,7 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
         }
     }
 
-    if (dir < 0) {
+    if (loadDir < 0) {
 
         if (seekPts < 0 && prevCache.empty()) {
             seekPts = lastPts - 1;
@@ -479,6 +482,9 @@ RGBFrame* FrameLoader::getFrame() {
 void FrameLoader::putFrame(RGBFrame* unusedFrame) {
     pool.put(unusedFrame);
 }
+void FrameLoader::createFrames(size_t count, int w, int h) {
+    pool.createFrames(count, w, h);
+}
 
 
 const RGBFrame* FrameQueue::curr() {
@@ -515,7 +521,7 @@ void FrameQueue::play(FrameLoader& loader) {
     if (loadDir < 0) {
         loadDir = 1;
         auto seekPos = lastSeekPosition();
-        loader.set(loadDir, seekPos);
+        loader.seek(loadDir, seekPos);
     }
 }
 void FrameQueue::seekNextFrame(FrameLoader& loader) {
@@ -529,7 +535,7 @@ void FrameQueue::seekNextFrame(FrameLoader& loader) {
     if (loadDir < 0) {
         loadDir = 1;
         auto seekPos = lastSeekPosition();
-        loader.set(loadDir, seekPos);
+        loader.seek(loadDir, seekPos);
     }
 }
 void FrameQueue::seekPrevFrame(FrameLoader& loader) {
@@ -543,7 +549,7 @@ void FrameQueue::seekPrevFrame(FrameLoader& loader) {
     if (loadDir > 0) {
         loadDir = -1;
         auto seekPos = firstSeekPosition();
-        loader.set(loadDir, seekPos);
+        loader.seek(loadDir, seekPos);
     }
 }
 void FrameQueue::fillFrom(FrameLoader& loader) {

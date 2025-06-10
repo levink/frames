@@ -75,14 +75,15 @@ class FrameLoader {
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic<bool> finished = false;
-    FramePool& pool;
+    FramePool pool;
     VideoReader& reader;
 
     struct State {
-        int8_t dir = 1;
+        int8_t loadDir = 1;
         int64_t seekPts = -1;
         friend bool operator==(const State& left, const State& right) {
-            return left.dir == right.dir &&
+            return 
+                left.loadDir == right.loadDir &&
                 left.seekPts == right.seekPts;
         }
     } sharedState;
@@ -95,16 +96,18 @@ class FrameLoader {
     bool canWork();
     State copyState();
     void saveResult(RGBFrame* frame, State state);
-    RGBFrame* readFrame(int8_t dir, int64_t seekPts);
+    RGBFrame* readFrame(const State& state);
 
 public:
-    FrameLoader(FramePool& pool, VideoReader& reader);
+    FrameLoader(VideoReader& reader);
     ~FrameLoader();
+
     void start();
     void stop();
-    void set(int8_t dir, int64_t pts);
+    void seek(int8_t loadDir, int64_t seekPts);
     RGBFrame* getFrame();
     void putFrame(RGBFrame* unusedFrame);
+    void createFrames(size_t count, int w, int h);
 };
 
 struct FrameQueue {

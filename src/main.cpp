@@ -43,7 +43,7 @@ struct SceneSize {
 
 struct PlayState {
     bool paused = false;
-    bool update = false;    // when paused
+    bool update = false;    // when paused or manual seek
     float progress = 0.f;   // [0; 100]
     int64_t framePts = 0;   // last seen frame pts 
     int64_t frameDur = 0;   // last seen frame duration
@@ -52,9 +52,8 @@ struct PlayState {
 Render render;
 SceneSize scene;
 
-FramePool pool; //todo: move pool inside loader?
 VideoReader reader;
-FrameLoader loader(pool, reader);
+FrameLoader loader(reader);
 FrameQueue frameQ;
 StreamInfo info;
 PlayState ps;
@@ -140,7 +139,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
             ps.progress = info.calcProgress(pts);
            
             // seek && flush loader
-            loader.set(1, pts);
+            loader.seek(1, pts);
             
             // flush frameQ
             for (auto item : frameQ.items) {
@@ -166,7 +165,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
             ps.progress = info.calcProgress(pts);
 
             // seek && flush loader
-            loader.set(1, pts);
+            loader.seek(1, pts);
 
             // flush frameQ
             for (auto item : frameQ.items) {
@@ -304,7 +303,7 @@ int main() {
     GLuint textureId = createTexture(frameWidth, frameHeight);
     render.createFrame(0, textureId, frameWidth, frameHeight);
     render.createFrame(1, textureId, frameWidth, frameHeight);
-    pool.createFrames(10, frameWidth, frameHeight);
+    loader.createFrames(10, frameWidth, frameHeight);
     loader.start();
 
     FpsCounter fps;
