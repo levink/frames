@@ -2,14 +2,9 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <chrono>
-#include <thread>
-#include <functional>
-#include <mutex>
-#include <condition_variable>
-#include <vector>
-#include <deque>
 #include "image/lodepng.h"
 #include "ui/ui.h"
+#include "util/fpscounter.h"
 #include "video/video.h"
 #include "render.h"
 #include "imgui.h"
@@ -47,258 +42,22 @@ struct SceneSize {
 };
 
 struct PlayState {
-    float progress = 0.f;
-    int64_t duration = 0;
+    StreamInfo info;
+    bool paused = false;
+    float progress = 0;         // [0; 100]
+    int64_t frameDuration = 0;  // microseconds
+    int16_t nextFrame = 0;      // when paused
 };
 
 Render render;
 SceneSize scene;
+
+FramePool pool; //todo: move pool inside loader?
 VideoReader reader;
-FramePool framePool; //todo: move inside FrameLoader?
-FrameLoader loader(framePool, reader);
+FrameLoader loader(pool, reader);
+FrameQueue frameQ;
 PlayState ps;
 
-struct FrameQueue {
-    const size_t capacity = 5;
-    const size_t deltaMin = 1;
-
-    std::deque<RGBFrame*> items;
-    size_t selected = -1;
-    int8_t loadDir = 1;
-    
-    bool paused = false;
-    int nextFrame = 0; //when paused
-
-
-    const RGBFrame* next() {
-        if (items.empty() ||  selected + 1 >= items.size()) {
-            return nullptr;
-        }
-        
-        selected++;
-        return items[selected];
-    }    
-
-    const RGBFrame* prev() {
-        if (items.empty() || selected == 0) {
-            return nullptr;
-        }
-
-        selected--;
-        return items[selected];
-    }
-
-    void print() const {
-        std::cout << "[";
-        for (size_t i = 0; i < items.size(); i++) {
-            auto elem = items[i];
-            char mark = (i == selected) ? '=' : ' ';
-            std::cout << elem->pts << mark << " ";
-        }
-        std::cout << "] ";
-
-        if (!items.empty()) {
-            std::cout << "pts=" << items[selected]->pts;
-        }
-
-        std::cout << std::endl;
-    }
-
-    void play(FrameLoader& loader) {
-        nextFrame = 0;
-
-        if (loadDir < 0) {
-            loadDir = 1;
-            auto seekPos = lastSeekPosition();
-            loader.set(loadDir, seekPos);
-        }
-    }
-
-    void seekNextFrame(FrameLoader& loader) {
-        nextFrame = 1;
-        
-        if (tooFarFromEnd()) {
-            return;
-        }
-
-        if (loadDir < 0) {
-            loadDir = 1;
-            auto seekPos = lastSeekPosition();
-            loader.set(loadDir, seekPos);
-        }
-    }
-
-    void seekPrevFrame(FrameLoader& loader) {
-        nextFrame = -1;
-        
-        if (tooFarFromBegin()) {
-            return;
-        }
-
-        if (loadDir > 0) {
-            loadDir = -1;
-            auto seekPos = firstSeekPosition();
-            loader.set(loadDir, seekPos);
-        }
-    }
-
-    void fillFrom(FrameLoader& loader) {
-        if (loadDir > 0) {
-            tryFillBack(loader);
-            return;
-        }
-        if (loadDir < 0) {
-            tryFillFront(loader);
-            return;
-        } 
-    }
-
-private:
-    bool tooFarFromBegin() const {
-        return selected > deltaMin;
-    }
-    bool tooFarFromEnd() const {
-        return selected + deltaMin + 1 < items.size();
-    }
-    void tryFillBack(FrameLoader& loader) {
-        if (tooFarFromEnd()) {
-            return;
-        }
-
-        auto frame = loader.next();
-        if (!frame) {
-            return;
-        }
-
-        bool added = pushBack(frame);
-        if (!added) {
-            loader.putUnused(frame);
-            return;
-        }
-
-        auto front = popFront();
-        loader.putUnused(front);
-    }
-    void tryFillFront(FrameLoader& loader) {
-        if (tooFarFromBegin()) {
-            return;
-        }
-
-        auto frame = loader.next();
-        if (!frame) {
-            return;
-        }
-
-        bool added = pushFront(frame);
-        if (!added) {
-            loader.putUnused(frame);
-            return;
-        }
-
-        auto back = popBack();
-        loader.putUnused(back);
-    }
-    bool pushBack(RGBFrame* frame) {
-        if (items.empty()) {
-            items.push_back(frame);
-            return true;
-        }
-
-        auto back = items.back();
-        auto backPts = back->pts + back->duration;
-        if (backPts == frame->pts) {
-            items.push_back(frame);
-            return true;
-        }
-
-        //bad pts, skip frame
-        return false;
-    }
-    bool pushFront(RGBFrame* frame) {
-        if (items.empty()) {
-            items.push_front(frame);
-            selected++;
-            return true;
-        }
-
-        auto front = items.front();
-        auto framePts = frame->pts + frame->duration;
-        if (framePts == front->pts) {
-            items.push_front(frame);
-            selected++;
-            return true;
-        }
-
-        //bad pts, skip frame
-        return false;
-        
-    }
-    RGBFrame* popBack() {
-        bool tooBigQueue = items.size() > capacity;
-        bool lastIsNotUsed = selected < items.size() - 1;
-        if (tooBigQueue && lastIsNotUsed) {
-            auto back = items.back();
-            items.pop_back();
-            return back;
-        }
-        return nullptr;
-    }
-    RGBFrame* popFront() {
-        bool tooBigQueue = items.size() > capacity;
-        bool firstIsNotUsed = selected > 0;
-        if (tooBigQueue && firstIsNotUsed) {
-            auto front = items.front();
-            items.pop_front();
-            selected--;
-            return front;
-        }
-        return nullptr;
-    }
-    int64_t lastSeekPosition() {
-        if (items.empty()) {
-            return 0;
-        }
-
-        auto last = items.back();
-        return last->pts + last->duration;
-    }
-    int64_t firstSeekPosition() {
-        if (items.empty()) {
-            return 0;
-        }
-
-        auto front = items.front();
-        return front->pts - 1;
-    }
-
-} frameQ;
-
-struct FpsCounter {
-    using time_point = std::chrono::steady_clock::time_point;
-    time_point last;
-    size_t value;
-
-    FpsCounter() {
-        using std::chrono::steady_clock;
-        last = std::chrono::steady_clock::now();
-        value = 0;
-    }
-    void count() {
-        using std::chrono::microseconds;
-        using std::chrono::steady_clock;
-        using std::chrono::duration_cast;
-
-        value++;
-
-        auto now = steady_clock::now();
-        auto delta = duration_cast<microseconds>(now - last).count();
-        if (delta > 1000000) {
-            std::cout << "fps=" << value << std::endl;
-            last = now;
-            value = 0;
-        }
-    }
-};
 
 static GLuint createTexture(int width, int height) {
 
@@ -356,21 +115,23 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        frameQ.paused = !frameQ.paused;
-        if (frameQ.paused) {
+        ps.paused = !ps.paused;
+        ps.nextFrame = 0;
+        if (ps.paused) {
             frameQ.print();
-            frameQ.nextFrame = 0;
         } else {
             frameQ.play(loader);
         }
     }
     else if (key.is(LEFT)) {
-        if (frameQ.paused) {
+        if (ps.paused) {
+            ps.nextFrame = -1;
             frameQ.seekPrevFrame(loader);
         }
     }
     else if (key.is(RIGHT)) {
-        if (frameQ.paused) {
+        if (ps.paused) {
+            ps.nextFrame = 1;
             frameQ.seekNextFrame(loader);
         }
     }
@@ -494,18 +255,17 @@ int main() {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
-    StreamInfo videoInfo = reader.getStreamInfo();
 
-    int frameWidth = reader.decoderContext->width;
-    int frameHeight = reader.decoderContext->height;
+    ps.info = reader.getStreamInfo();
+    int frameWidth = ps.info.frameWidth;
+    int frameHeight = ps.info.frameHeight;
 
     GLuint textureId = createTexture(frameWidth, frameHeight);
     render.createFrame(0, textureId, frameWidth, frameHeight);
     render.createFrame(1, textureId, frameWidth, frameHeight);
-    framePool.createFrames(10, frameWidth, frameHeight);
+    pool.createFrames(10, frameWidth, frameHeight);
     loader.start();
 
-    
     FpsCounter fps;
     auto t1 = std::chrono::steady_clock::now();
 
@@ -514,46 +274,47 @@ int main() {
         {
             frameQ.fillFrom(loader);
 
-            if (frameQ.paused && frameQ.nextFrame) {
+            if (ps.paused && ps.nextFrame) {
                 const RGBFrame* frame =
-                    frameQ.nextFrame > 0 ? frameQ.next() :
-                    frameQ.nextFrame < 0 ? frameQ.prev() :
+                    ps.nextFrame > 0 ? frameQ.next() :
+                    ps.nextFrame < 0 ? frameQ.prev() :
                     nullptr;
 
                 if (frame) {
                     frameQ.print();
-                    frameQ.nextFrame = 0;
-
-                    ps.duration = videoInfo.toMicros(frame->duration);
-                    ps.progress = videoInfo.calcProgress(frame->pts);
+                    
+                    ps.frameDuration = ps.info.toMicros(frame->duration);
+                    ps.progress = ps.info.calcProgress(frame->pts);
+                    ps.nextFrame = 0;
 
                     updateTexture(render.frame[0].textureId, *frame);
                     updateTexture(render.frame[1].textureId, *frame);
                 }
             }
-            else if (!frameQ.paused) {
+            else if (!ps.paused) {
 
                 using std::chrono::microseconds;
                 using std::chrono::duration_cast;
                 using std::chrono::steady_clock;
+
                 auto t2 = steady_clock::now();
-                auto deltaMicros = duration_cast<microseconds>(t2 - t1).count();
-                if (deltaMicros > ps.duration) {
+                auto currDuration = duration_cast<microseconds>(t2 - t1).count();
+                if (currDuration > ps.frameDuration) {
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
-                        auto offset = deltaMicros - ps.duration;
-                        auto nextDuration = videoInfo.toMicros(frame->duration);
-                        if (offset < nextDuration) {
-                            t1 = t2 - microseconds(offset);
+                        auto delta = currDuration - ps.frameDuration;
+                        auto nextDuration = ps.info.toMicros(frame->duration);
+                        if (delta < nextDuration) {
+                            t1 = t2 - microseconds(delta);
                         } else {
                             t1 = t2;
                         }
 
-                        ps.duration = nextDuration;
-                        ps.progress = videoInfo.calcProgress(frame->pts);
+                        ps.frameDuration = nextDuration;
+                        ps.progress = ps.info.calcProgress(frame->pts);
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
-                        fps.count();
+                        fps.print();
                     }
                 }
             }

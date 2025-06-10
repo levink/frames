@@ -15,6 +15,7 @@ static int64_t getFramePTS(const AVFrame* frame) {
     return frame->best_effort_timestamp;
 }
 
+
 FramePool::~FramePool() {
     for (auto& item : items) {
         delete item;
@@ -57,6 +58,24 @@ RGBFrame* FramePool::get() {
     items.pop_back();
     return last;
 }
+
+
+float StreamInfo::calcProgress(int64_t pts) const {
+    if (durationPts == 0) {
+        return 0;
+    }
+
+    float value = (pts * 100.f) / durationPts;
+    if (value < 0.f) return 0;
+    if (value > 100.f) return 100.f;
+    return value;
+}
+int64_t StreamInfo::toMicros(int64_t pts) const {
+    auto num = pts * time_base.num * 1000000;
+    auto den = time_base.den;
+    return num / den;
+}
+
 
 bool FrameConverter::createContext(const AVCodecContext* decoder) {
     const auto& width = decoder->width;
@@ -238,39 +257,46 @@ bool VideoReader::seek(int64_t pts) {
 }
 StreamInfo VideoReader::getStreamInfo() const {
     if (videoStreamIndex < 0 || formatContext->nb_streams <= videoStreamIndex) {
-        return StreamInfo{ {0, 1}, 0, 0 };
+        return StreamInfo{ {0, 1}, 0, 0, 1, 1 };
     }
+
     const AVStream* stream = formatContext->streams[videoStreamIndex];
     return StreamInfo {
         stream->time_base,
         stream->duration,
-        stream->nb_frames
+        stream->nb_frames,
+        decoderContext->width,
+        decoderContext->height
     };
 }
 
 
 FrameLoader::FrameLoader(FramePool& pool, VideoReader& reader) :
-    framePool(pool),
+    pool(pool),
     reader(reader) { }
 FrameLoader::~FrameLoader() {
     if (t.joinable()) {
         t.join();
     }
+
+    for (auto& item : prevCache) {
+        delete item;
+        item = nullptr;
+    }
+    
+    delete result;
+    result = nullptr;
 }
 void FrameLoader::start() {
     finished.store(false);
-    {
-        auto lock = std::lock_guard(mtx);
-    }
+    {auto lock = std::lock_guard(mtx);}
     t = std::thread([this]() {
         playback();
     });
 }
 void FrameLoader::stop() {
     finished.store(true);
-    {
-        auto lock = std::lock_guard(mtx);
-    }
+    {auto lock = std::lock_guard(mtx);}
     cv.notify_one();
     if (t.joinable()) {
         t.join();
@@ -284,24 +310,12 @@ void FrameLoader::set(int8_t dir, int64_t pts) {
     sharedState.seekPts = pts;
 
     //flush
-    auto tmp = result;
+    auto frame = result;
     result = nullptr;
-    framePool.put(tmp);
+    pool.put(frame);
 
     //wake up background thread
     cv.notify_one();
-}
-RGBFrame* FrameLoader::next() {
-    auto lock = std::lock_guard(mtx);
-    if (result == nullptr) {
-        return nullptr;
-    }
-
-    auto tmp = result;
-    result = nullptr;
-    cv.notify_one();
-
-    return tmp;
 }
 void FrameLoader::playback() {
 
@@ -321,6 +335,12 @@ bool FrameLoader::canRead() {
     }
     return !finished;
 }
+FrameLoader::State FrameLoader::copyState() {
+    auto lock = std::lock_guard(mtx);
+    auto copy = sharedState;
+    sharedState.seekPts = -1;
+    return copy;
+}
 RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
 
     if (dir > 0) {
@@ -331,20 +351,20 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
                 return nullptr;
             }
 
-            auto frame = framePool.get();
+            auto frame = pool.get();
             ok = reader.read(*frame, seekPts);
             if (!ok) {
-                framePool.put(frame);
+                pool.put(frame);
                 return nullptr;
             }
 
             return frame;
         }
         else {
-            auto frame = framePool.get();
+            auto frame = pool.get();
             bool ok = reader.read(*frame);
             if (!ok) {
-                framePool.put(frame);
+                pool.put(frame);
                 return nullptr;
             }
             return frame;
@@ -363,7 +383,7 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
             prevCache.resize(5, nullptr);
             for (auto& item : prevCache) {
                 if (item == nullptr) {
-                    item = framePool.get();
+                    item = pool.get();
                 }
                 item->pts = -1;
                 item->duration = 0;
@@ -390,7 +410,7 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
                 // cache.clearUnused();
                 for (size_t i = 0; i < prevCache.size(); i++) {
                     if (prevCache[i]->pts == -1) {
-                        framePool.put(prevCache[i]);
+                        pool.put(prevCache[i]);
                         prevCache[i] = nullptr;
                     }
                 }
@@ -405,7 +425,7 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
             }
             else {
                 // Not found. Need clear cache
-                framePool.put(prevCache);
+                pool.put(prevCache);
                 prevCache.clear();
             }
         }
@@ -426,12 +446,207 @@ void FrameLoader::saveResult(RGBFrame* frame) {
     result = frame;
     lastPts = frame->pts;
 }
-FrameLoader::State FrameLoader::copyState() {
+RGBFrame* FrameLoader::getFrame() {
     auto lock = std::lock_guard(mtx);
-    auto copy = sharedState;
-    sharedState.seekPts = -1;
-    return copy;
+    if (result == nullptr) {
+        return nullptr;
+    }
+
+    auto tmp = result;
+    result = nullptr;
+    cv.notify_one();
+
+    return tmp;
 }
-void FrameLoader::putUnused(RGBFrame* frame) {
-    framePool.put(frame);
+void FrameLoader::putFrame(RGBFrame* unusedFrame) {
+    pool.put(unusedFrame);
 }
+
+
+const RGBFrame* FrameQueue::next() {
+    if (items.empty() || selected + 1 >= items.size()) {
+        return nullptr;
+    }
+
+    selected++;
+    return items[selected];
+}
+const RGBFrame* FrameQueue::prev() {
+    if (items.empty() || selected <= 0) {
+        return nullptr;
+    }
+
+    selected--;
+    return items[selected];
+}
+void FrameQueue::print() const {
+    std::cout << "[";
+    for (size_t i = 0; i < items.size(); i++) {
+        auto elem = items[i];
+        char mark = (i == selected) ? '=' : ' ';
+        std::cout << elem->pts << mark << " ";
+    }
+    std::cout << "] ";
+
+    if (!items.empty()) {
+        std::cout << "pts=" << items[selected]->pts;
+    }
+
+    std::cout << std::endl;
+}
+void FrameQueue::play(FrameLoader& loader) {
+    if (loadDir < 0) {
+        loadDir = 1;
+        auto seekPos = lastSeekPosition();
+        loader.set(loadDir, seekPos);
+    }
+}
+void FrameQueue::seekNextFrame(FrameLoader& loader) {
+    if (tooFarFromEnd()) {
+        return;
+    }
+
+    if (loadDir < 0) {
+        loadDir = 1;
+        auto seekPos = lastSeekPosition();
+        loader.set(loadDir, seekPos);
+    }
+}
+void FrameQueue::seekPrevFrame(FrameLoader& loader) {
+    if (tooFarFromBegin()) {
+        return;
+    }
+
+    if (loadDir > 0) {
+        loadDir = -1;
+        auto seekPos = firstSeekPosition();
+        loader.set(loadDir, seekPos);
+    }
+}
+void FrameQueue::fillFrom(FrameLoader& loader) {
+    if (loadDir > 0) {
+        tryFillBack(loader);
+        return;
+    }
+    if (loadDir < 0) {
+        tryFillFront(loader);
+        return;
+    }
+}
+bool FrameQueue::tooFarFromBegin() const {
+    return selected > deltaMin;
+}
+bool FrameQueue::tooFarFromEnd() const {
+    return selected + deltaMin + 1 < items.size();
+}
+void FrameQueue::tryFillBack(FrameLoader& loader) {
+    if (tooFarFromEnd()) {
+        return;
+    }
+
+    auto frame = loader.getFrame();
+    if (!frame) {
+        return;
+    }
+
+    bool added = pushBack(frame);
+    if (!added) {
+        loader.putFrame(frame);
+        return;
+    }
+
+    auto front = popFront();
+    loader.putFrame(front);
+}
+void FrameQueue::tryFillFront(FrameLoader& loader) {
+    if (tooFarFromBegin()) {
+        return;
+    }
+
+    auto frame = loader.getFrame();
+    if (!frame) {
+        return;
+    }
+
+    bool added = pushFront(frame);
+    if (!added) {
+        loader.putFrame(frame);
+        return;
+    }
+
+    auto back = popBack();
+    loader.putFrame(back);
+}
+bool FrameQueue::pushBack(RGBFrame* frame) {
+    if (items.empty()) {
+        items.push_back(frame);
+        return true;
+    }
+
+    auto back = items.back();
+    auto backPts = back->pts + back->duration;
+    if (backPts == frame->pts) {
+        items.push_back(frame);
+        return true;
+    }
+
+    //bad pts, skip frame
+    return false;
+}
+bool FrameQueue::pushFront(RGBFrame* frame) {
+    if (items.empty()) {
+        items.push_front(frame);
+        selected++;
+        return true;
+    }
+
+    auto front = items.front();
+    auto framePts = frame->pts + frame->duration;
+    if (framePts == front->pts) {
+        items.push_front(frame);
+        selected++;
+        return true;
+    }
+
+    //bad pts, skip frame
+    return false;
+
+}
+RGBFrame* FrameQueue::popBack() {
+    bool tooBigQueue = items.size() > capacity;
+    bool lastIsNotUsed = selected < items.size() - 1;
+    if (tooBigQueue && lastIsNotUsed) {
+        auto back = items.back();
+        items.pop_back();
+        return back;
+    }
+    return nullptr;
+}
+RGBFrame* FrameQueue::popFront() {
+    bool tooBigQueue = items.size() > capacity;
+    bool firstIsNotUsed = selected > 0;
+    if (tooBigQueue && firstIsNotUsed) {
+        auto front = items.front();
+        items.pop_front();
+        selected--;
+        return front;
+    }
+    return nullptr;
+}
+int64_t FrameQueue::lastSeekPosition() {
+    if (items.empty()) {
+        return 0;
+    }
+
+    auto last = items.back();
+    return last->pts + last->duration;
+}
+int64_t FrameQueue::firstSeekPosition() {
+    if (items.empty()) {
+        return 0;
+    }
+
+    auto front = items.front();
+    return front->pts - 1;
+}
+

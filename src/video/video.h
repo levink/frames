@@ -1,8 +1,9 @@
 #pragma once 
 #include <vector>
+#include <deque>
+#include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <functional>
 #include "ffmpeg.h"
 #include "frame.h"
 
@@ -26,23 +27,12 @@ public:
 
 struct StreamInfo {
     AVRational time_base;
-    int64_t duration;
-    int64_t nb_frames;
-    float calcProgress(int64_t pts) const {
-        if (duration == 0) {
-            return 0;
-        }
-
-        float value = (pts * 100.f) / duration;
-        if (value < 0.f) return 0;
-        if (value > 100.f) return 100.f;
-        return value;
-    }
-    int64_t toMicros(int64_t pts) const {
-        auto num = pts * time_base.num * 1000000;
-        auto den = time_base.den;
-        return num / den;
-    }
+    int64_t durationPts;
+    int64_t framesCount;
+    int frameWidth;
+    int frameHeight;
+    float calcProgress(int64_t pts) const;
+    int64_t toMicros(int64_t pts) const;
 };
 
 struct FrameConverter {
@@ -71,7 +61,6 @@ struct VideoReader {
     bool read(RGBFrame& result);
     bool read(RGBFrame& result, int64_t skipPts);
     bool seek(int64_t pts);
-
     StreamInfo getStreamInfo() const;
 
 private:
@@ -84,7 +73,7 @@ class FrameLoader {
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic<bool> finished = false;
-    FramePool& framePool;
+    FramePool& pool;
     VideoReader& reader;
 
     struct State {
@@ -98,9 +87,9 @@ class FrameLoader {
 
     void playback();
     bool canRead();
+    State copyState();
     RGBFrame* readFrame(int8_t dir, int64_t seekPts);
     void saveResult(RGBFrame* frame);
-    State copyState();
 
 public:
     FrameLoader(FramePool& pool, VideoReader& reader);
@@ -108,7 +97,35 @@ public:
     void start();
     void stop();
     void set(int8_t dir, int64_t pts);
-    RGBFrame* next();
-    void putUnused(RGBFrame* frame);
+    RGBFrame* getFrame();
+    void putFrame(RGBFrame* unusedFrame);
 };
 
+struct FrameQueue {
+    const size_t capacity = 5;
+    const size_t deltaMin = 1;
+
+    std::deque<RGBFrame*> items;
+    size_t selected = -1;
+    int8_t loadDir = 1;
+
+    const RGBFrame* next();
+    const RGBFrame* prev();
+    void print() const;
+    void play(FrameLoader& loader);
+    void seekNextFrame(FrameLoader& loader);
+    void seekPrevFrame(FrameLoader& loader);
+    void fillFrom(FrameLoader& loader);
+
+private:
+    bool tooFarFromBegin() const;
+    bool tooFarFromEnd() const;
+    void tryFillBack(FrameLoader& loader);
+    void tryFillFront(FrameLoader& loader);
+    bool pushBack(RGBFrame* frame);
+    bool pushFront(RGBFrame* frame);
+    RGBFrame* popBack();
+    RGBFrame* popFront();
+    int64_t lastSeekPosition();
+    int64_t firstSeekPosition();
+};

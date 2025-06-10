@@ -22,6 +22,7 @@ add_executable(app
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
 	src/ui/ui.cpp
+	src/util/fpscounter.cpp
 	src/video/frame.cpp
 	src/video/video.cpp
 	src/main.cpp
