@@ -42,11 +42,11 @@ struct SceneSize {
 };
 
 struct PlayState {
-    StreamInfo info;
     bool paused = false;
-    float progress = 0;         // [0; 100]
-    int64_t frameDuration = 0;  // microseconds
-    int16_t nextFrame = 0;      // when paused
+    bool update = false;    // when paused
+    float progress = 0.f;   // [0; 100]
+    int64_t framePts = 0;   // last seen frame pts 
+    int64_t frameDur = 0;   // last seen frame duration
 };
 
 Render render;
@@ -56,6 +56,7 @@ FramePool pool; //todo: move pool inside loader?
 VideoReader reader;
 FrameLoader loader(pool, reader);
 FrameQueue frameQ;
+StreamInfo info;
 PlayState ps;
 
 
@@ -116,7 +117,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(SPACE)) {
         ps.paused = !ps.paused;
-        ps.nextFrame = 0;
+        ps.update = false;
         if (ps.paused) {
             frameQ.print();
         } else {
@@ -125,14 +126,54 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(LEFT)) {
         if (ps.paused) {
-            ps.nextFrame = -1;
+            ps.update = true;
             frameQ.seekPrevFrame(loader);
+        }
+        else {
+            // minus 1 second
+            auto oneSecond = info.toPts(1000000);
+            auto pts = std::max(0LL, ps.framePts - oneSecond);
+
+            // update UI
+            ps.update = true;
+            ps.framePts = pts;
+            ps.progress = info.calcProgress(pts);
+           
+            // seek && flush loader
+            loader.set(1, pts);
+            
+            // flush frameQ
+            for (auto item : frameQ.items) {
+                loader.putFrame(item);
+            }
+            frameQ.items.clear();
+            frameQ.selected = -1;
         }
     }
     else if (key.is(RIGHT)) {
         if (ps.paused) {
-            ps.nextFrame = 1;
+            ps.update = true;
             frameQ.seekNextFrame(loader);
+        }
+        else {
+            // plus 1 second
+            auto oneSecond = info.toPts(1000000);
+            auto pts = std::min(info.durationPts, ps.framePts + oneSecond);
+
+            // update UI
+            ps.update = true;
+            ps.framePts = pts;
+            ps.progress = info.calcProgress(pts);
+
+            // seek && flush loader
+            loader.set(1, pts);
+
+            // flush frameQ
+            for (auto item : frameQ.items) {
+                loader.putFrame(item);
+            }
+            frameQ.items.clear();
+            frameQ.selected = -1;
         }
     }
 }
@@ -256,9 +297,9 @@ int main() {
         return -1;
     }
 
-    ps.info = reader.getStreamInfo();
-    int frameWidth = ps.info.frameWidth;
-    int frameHeight = ps.info.frameHeight;
+    info = reader.getStreamInfo();
+    int frameWidth = info.frameWidth;
+    int frameHeight = info.frameHeight;
 
     GLuint textureId = createTexture(frameWidth, frameHeight);
     render.createFrame(0, textureId, frameWidth, frameHeight);
@@ -271,49 +312,52 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
 
+        frameQ.fillFrom(loader);
+
         {
-            frameQ.fillFrom(loader);
-
-            if (ps.paused && ps.nextFrame) {
-                const RGBFrame* frame =
-                    ps.nextFrame > 0 ? frameQ.next() :
-                    ps.nextFrame < 0 ? frameQ.prev() :
-                    nullptr;
-
+            if (ps.paused && ps.update) {        
+                const RGBFrame* frame = frameQ.curr();
                 if (frame) {
                     frameQ.print();
                     
-                    ps.frameDuration = ps.info.toMicros(frame->duration);
-                    ps.progress = ps.info.calcProgress(frame->pts);
-                    ps.nextFrame = 0;
-
+                    ps.update = false;
+                    ps.framePts = frame->pts;
+                    ps.frameDur = frame->duration;
+                    ps.progress = info.calcProgress(frame->pts);
                     updateTexture(render.frame[0].textureId, *frame);
                     updateTexture(render.frame[1].textureId, *frame);
                 }
             }
             else if (!ps.paused) {
-
+                //todo: need refactoring this
                 using std::chrono::microseconds;
                 using std::chrono::duration_cast;
                 using std::chrono::steady_clock;
 
                 auto t2 = steady_clock::now();
-                auto currDuration = duration_cast<microseconds>(t2 - t1).count();
-                if (currDuration > ps.frameDuration) {
+                auto duration = info.toPts(duration_cast<microseconds>(t2 - t1).count());
+                if (duration > ps.frameDur || ps.update) {
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
-                        auto delta = currDuration - ps.frameDuration;
-                        auto nextDuration = ps.info.toMicros(frame->duration);
-                        if (delta < nextDuration) {
-                            t1 = t2 - microseconds(delta);
+                        auto deltaPts = duration - ps.frameDur;
+                        if (deltaPts < frame->duration) {
+                            t1 = t2 - microseconds(info.toMicros(deltaPts));
                         } else {
                             t1 = t2;
                         }
 
-                        ps.frameDuration = nextDuration;
-                        ps.progress = ps.info.calcProgress(frame->pts);
+                        if (ps.update) {
+                            ps.update = false;
+                        }
+                        else {
+                            ps.framePts = frame->pts;
+                            ps.frameDur = frame->duration;
+                            ps.progress = info.calcProgress(frame->pts);
+                        }
+                        
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
+                        
                         fps.print();
                     }
                 }

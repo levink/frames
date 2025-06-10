@@ -75,6 +75,11 @@ int64_t StreamInfo::toMicros(int64_t pts) const {
     auto den = time_base.den;
     return num / den;
 }
+int64_t StreamInfo::toPts(int64_t micros) const {
+    auto num = micros * time_base.den;
+    auto den = 1000000 * time_base.num;
+    return num / den;
+}
 
 
 bool FrameConverter::createContext(const AVCodecContext* decoder) {
@@ -125,6 +130,7 @@ VideoReader::~VideoReader() {
     converter.destroyContext();
 }
 bool VideoReader::open(const char* fileName) {
+    eof = false;
 
     if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
         return false;// OpenFileResult::FileBadOpen;
@@ -177,13 +183,12 @@ bool VideoReader::read(RGBFrame& result) {
         return ok;
     }
 
-    std::cout << "readFrame() finished" << std::endl;
+    std::cout << "readFrame() finished1" << std::endl;
     return false;
 }
 bool VideoReader::read(RGBFrame& result, int64_t skipPts) {
     while (readRaw()) {    
-        auto pts = frame->pts;
-        if (pts < skipPts) {
+        if (frame->pts < skipPts) {
             av_frame_unref(frame);
             av_packet_unref(packet);
             continue;
@@ -195,12 +200,16 @@ bool VideoReader::read(RGBFrame& result, int64_t skipPts) {
         return ok;
     }
 
-    std::cout << "readFrame() finished" << std::endl;
+    std::cout << "readFrame() finished2" << std::endl;
     return false;
 }
-bool VideoReader::readRaw() const {
+bool VideoReader::readRaw() {
     while (true) {
         int ret = av_read_frame(formatContext, packet);
+        if (ret == AVERROR_EOF) {
+            eof = true;
+            return false;
+        }
         if (ret < 0) {
             return false;
         }
@@ -253,6 +262,7 @@ bool VideoReader::seek(int64_t pts) {
         return false;
     }
     avcodec_flush_buffers(decoderContext);
+    eof = false;
     return true;
 }
 StreamInfo VideoReader::getStreamInfo() const {
@@ -318,19 +328,16 @@ void FrameLoader::set(int8_t dir, int64_t pts) {
     cv.notify_one();
 }
 void FrameLoader::playback() {
-
-    while (canRead()) {
-        State copy = copyState();
-        auto frame = readFrame(copy.dir, copy.seekPts);
-        if (frame) {
-            saveResult(frame);
-        }
+    while (canWork()) {
+        auto state = copyState();
+        auto frame = readFrame(state.dir, state.seekPts);
+        saveResult(frame, state);
     }
     std::cout << "stopped" << std::endl;
 }
-bool FrameLoader::canRead() {
+bool FrameLoader::canWork() {
     auto lock = std::unique_lock(mtx);
-    while (!finished && result) {
+    while (!finished && (result || reader.eof && sharedState.seekPts == -1)) {
         cv.wait(lock);
     }
     return !finished;
@@ -338,8 +345,23 @@ bool FrameLoader::canRead() {
 FrameLoader::State FrameLoader::copyState() {
     auto lock = std::lock_guard(mtx);
     auto copy = sharedState;
-    sharedState.seekPts = -1;
     return copy;
+}
+void FrameLoader::saveResult(RGBFrame* frame, State state) {
+    auto lock = std::lock_guard(mtx);
+    if (state != sharedState) {
+        pool.put(frame);
+        return;
+    }
+
+    if (sharedState.seekPts != -1) {
+        sharedState.seekPts = -1;
+    }
+
+    if (frame) {
+        result = frame;
+        lastPts = frame->pts;
+    }
 }
 RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
 
@@ -441,11 +463,7 @@ RGBFrame* FrameLoader::readFrame(int8_t dir, int64_t seekPts) {
 
     return nullptr;
 }
-void FrameLoader::saveResult(RGBFrame* frame) {
-    auto lock = std::unique_lock(mtx);
-    result = frame;
-    lastPts = frame->pts;
-}
+
 RGBFrame* FrameLoader::getFrame() {
     auto lock = std::lock_guard(mtx);
     if (result == nullptr) {
@@ -463,21 +481,19 @@ void FrameLoader::putFrame(RGBFrame* unusedFrame) {
 }
 
 
-const RGBFrame* FrameQueue::next() {
-    if (items.empty() || selected + 1 >= items.size()) {
-        return nullptr;
+const RGBFrame* FrameQueue::curr() {
+    if (0 <= selected && selected < items.size()) {
+        return items[selected];
     }
-
-    selected++;
-    return items[selected];
+    return nullptr;
 }
-const RGBFrame* FrameQueue::prev() {
-    if (items.empty() || selected <= 0) {
-        return nullptr;
+const RGBFrame* FrameQueue::next() {
+    auto nextIndex = selected + 1;
+    if (0 <= nextIndex && nextIndex < items.size()) {
+        selected = nextIndex;
+        return items[selected];
     }
-
-    selected--;
-    return items[selected];
+    return nullptr;
 }
 void FrameQueue::print() const {
     std::cout << "[";
@@ -488,10 +504,11 @@ void FrameQueue::print() const {
     }
     std::cout << "] ";
 
-    if (!items.empty()) {
+    if (0 <= selected && selected < items.size()) {
         std::cout << "pts=" << items[selected]->pts;
+    } else {
+        std::cout << "pts=???";
     }
-
     std::cout << std::endl;
 }
 void FrameQueue::play(FrameLoader& loader) {
@@ -502,6 +519,9 @@ void FrameQueue::play(FrameLoader& loader) {
     }
 }
 void FrameQueue::seekNextFrame(FrameLoader& loader) {
+    
+    selected = std::min(selected + 1, (int64_t)items.size() - 1);
+
     if (tooFarFromEnd()) {
         return;
     }
@@ -513,6 +533,9 @@ void FrameQueue::seekNextFrame(FrameLoader& loader) {
     }
 }
 void FrameQueue::seekPrevFrame(FrameLoader& loader) {
+
+    selected = std::min(std::max(selected - 1, 0LL), (int64_t)items.size() - 1);
+
     if (tooFarFromBegin()) {
         return;
     }
@@ -537,7 +560,7 @@ bool FrameQueue::tooFarFromBegin() const {
     return selected > deltaMin;
 }
 bool FrameQueue::tooFarFromEnd() const {
-    return selected + deltaMin + 1 < items.size();
+    return selected + deltaMin + 1 < static_cast<int64_t>(items.size());
 }
 void FrameQueue::tryFillBack(FrameLoader& loader) {
     if (tooFarFromEnd()) {
@@ -633,14 +656,6 @@ RGBFrame* FrameQueue::popFront() {
     }
     return nullptr;
 }
-int64_t FrameQueue::lastSeekPosition() {
-    if (items.empty()) {
-        return 0;
-    }
-
-    auto last = items.back();
-    return last->pts + last->duration;
-}
 int64_t FrameQueue::firstSeekPosition() {
     if (items.empty()) {
         return 0;
@@ -648,5 +663,13 @@ int64_t FrameQueue::firstSeekPosition() {
 
     auto front = items.front();
     return front->pts - 1;
+}
+int64_t FrameQueue::lastSeekPosition() {
+    if (items.empty()) {
+        return 0;
+    }
+
+    auto last = items.back();
+    return last->pts + last->duration;
 }
 

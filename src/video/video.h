@@ -33,6 +33,7 @@ struct StreamInfo {
     int frameHeight;
     float calcProgress(int64_t pts) const;
     int64_t toMicros(int64_t pts) const;
+    int64_t toPts(int64_t micros) const;
 };
 
 struct FrameConverter {
@@ -53,6 +54,7 @@ struct VideoReader {
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
     FrameConverter converter;
+    bool eof = false;
 
     VideoReader();
     ~VideoReader();
@@ -64,7 +66,7 @@ struct VideoReader {
     StreamInfo getStreamInfo() const;
 
 private:
-    bool readRaw() const;
+    bool readRaw();
     bool convert(const AVFrame* frame, RGBFrame& result);
 };
            
@@ -79,6 +81,10 @@ class FrameLoader {
     struct State {
         int8_t dir = 1;
         int64_t seekPts = -1;
+        friend bool operator==(const State& left, const State& right) {
+            return left.dir == right.dir &&
+                left.seekPts == right.seekPts;
+        }
     } sharedState;
 
     RGBFrame* result = nullptr;
@@ -86,10 +92,10 @@ class FrameLoader {
     int64_t lastPts = -1;
 
     void playback();
-    bool canRead();
+    bool canWork();
     State copyState();
+    void saveResult(RGBFrame* frame, State state);
     RGBFrame* readFrame(int8_t dir, int64_t seekPts);
-    void saveResult(RGBFrame* frame);
 
 public:
     FrameLoader(FramePool& pool, VideoReader& reader);
@@ -102,15 +108,15 @@ public:
 };
 
 struct FrameQueue {
-    const size_t capacity = 5;
-    const size_t deltaMin = 1;
+    const int64_t capacity = 5;
+    const int64_t deltaMin = 1;
 
     std::deque<RGBFrame*> items;
-    size_t selected = -1;
+    int64_t selected = -1;
     int8_t loadDir = 1;
 
+    const RGBFrame* curr();
     const RGBFrame* next();
-    const RGBFrame* prev();
     void print() const;
     void play(FrameLoader& loader);
     void seekNextFrame(FrameLoader& loader);
@@ -126,6 +132,6 @@ private:
     bool pushFront(RGBFrame* frame);
     RGBFrame* popBack();
     RGBFrame* popFront();
-    int64_t lastSeekPosition();
     int64_t firstSeekPosition();
+    int64_t lastSeekPosition();
 };
