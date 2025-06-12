@@ -14,6 +14,15 @@ static int64_t getFramePTS(const AVFrame* frame) {
 
     return frame->best_effort_timestamp;
 }
+static int64_t prevSeekPosition(const RGBFrame* from) {
+    return from->pts - 1;
+}
+static int64_t nextSeekPosition(const RGBFrame* from) {
+    return from->pts + from->duration;
+}
+static bool checkPts(const RGBFrame* left, const RGBFrame* right) {
+    return left->pts + left->duration == right->pts;
+}
 
 
 FramePool::~FramePool() {
@@ -349,12 +358,13 @@ FrameLoader::State FrameLoader::copyState() {
 void FrameLoader::saveResult(RGBFrame* frame, State workState) {
     auto lock = std::lock_guard(mtx);
     if (workState != sharedState) {
-        /* result is not actual because sharedState changed during the read */
+        /* result is not actual because sharedState changed during the av_read... */
         pool.put(frame);
         return;
     }
 
     if (sharedState.seekPts != -1) {
+        // need seek only once per read
         sharedState.seekPts = -1;
     }
 
@@ -466,7 +476,6 @@ RGBFrame* FrameLoader::readFrame(const State& state) {
 
     return nullptr;
 }
-
 RGBFrame* FrameLoader::getFrame() {
     auto lock = std::lock_guard(mtx);
     if (result == nullptr) {
@@ -525,28 +534,22 @@ void FrameQueue::play(FrameLoader& loader) {
     }
 }
 void FrameQueue::seekNextFrame(FrameLoader& loader) {
-    
-    selected = std::min(selected + 1, (int64_t)items.size() - 1);
-
-    if (tooFarFromEnd()) {
-        return;
+    if (selected + 1 < items.size()) {
+        selected++;
     }
 
-    if (loadDir < 0) {
+    if (loadDir < 0 && !tooFarFromEnd()) {
         loadDir = 1;
         auto seekPos = lastSeekPosition();
         loader.seek(loadDir, seekPos);
     }
 }
 void FrameQueue::seekPrevFrame(FrameLoader& loader) {
-
-    selected = std::min(std::max(selected - 1, 0LL), (int64_t)items.size() - 1);
-
-    if (tooFarFromBegin()) {
-        return;
+    if (selected > 0) {
+        selected--;
     }
 
-    if (loadDir > 0) {
+    if (loadDir > 0 && !tooFarFromBegin()) {
         loadDir = -1;
         auto seekPos = firstSeekPosition();
         loader.seek(loadDir, seekPos);
@@ -561,6 +564,13 @@ void FrameQueue::fillFrom(FrameLoader& loader) {
         tryFillFront(loader);
         return;
     }
+}
+void FrameQueue::flush(FrameLoader& loader) {
+    for (auto item : items) {
+        loader.putFrame(item);
+    }
+    items.clear();
+    selected = -1;
 }
 bool FrameQueue::tooFarFromBegin() const {
     return selected > deltaMin;
@@ -578,14 +588,17 @@ void FrameQueue::tryFillBack(FrameLoader& loader) {
         return;
     }
 
-    bool added = pushBack(frame);
-    if (!added) {
-        loader.putFrame(frame);
-        return;
+    if (!items.empty() && !checkPts(items.back(), frame)) {
+        std::cout << "Warning: skip frame, bad pts" << std::endl;
     }
 
-    auto front = popFront();
-    loader.putFrame(front);
+    auto prev = items.pushBack(frame);
+    if (prev) {
+        loader.putFrame(prev);
+        if (selected >= 0) {
+            selected--;
+        }
+    }
 }
 void FrameQueue::tryFillFront(FrameLoader& loader) {
     if (tooFarFromBegin()) {
@@ -597,85 +610,27 @@ void FrameQueue::tryFillFront(FrameLoader& loader) {
         return;
     }
 
-    bool added = pushFront(frame);
-    if (!added) {
-        loader.putFrame(frame);
-        return;
+    if (!items.empty() && !checkPts(frame, items.front())) {
+        std::cout << "Warning: skip frame, bad pts" << std::endl;
     }
 
-    auto back = popBack();
-    loader.putFrame(back);
-}
-bool FrameQueue::pushBack(RGBFrame* frame) {
-    if (items.empty()) {
-        items.push_back(frame);
-        return true;
-    }
-
-    auto back = items.back();
-    auto backPts = back->pts + back->duration;
-    if (backPts == frame->pts) {
-        items.push_back(frame);
-        return true;
-    }
-
-    //bad pts, skip frame
-    return false;
-}
-bool FrameQueue::pushFront(RGBFrame* frame) {
-    if (items.empty()) {
-        items.push_front(frame);
+    auto prev = items.pushFront(frame);
+    loader.putFrame(prev);
+    
+    if (selected >= 0) {
         selected++;
-        return true;
     }
-
-    auto front = items.front();
-    auto framePts = frame->pts + frame->duration;
-    if (framePts == front->pts) {
-        items.push_front(frame);
-        selected++;
-        return true;
-    }
-
-    //bad pts, skip frame
-    return false;
-
-}
-RGBFrame* FrameQueue::popBack() {
-    bool tooBigQueue = items.size() > capacity;
-    bool lastIsNotUsed = selected < items.size() - 1;
-    if (tooBigQueue && lastIsNotUsed) {
-        auto back = items.back();
-        items.pop_back();
-        return back;
-    }
-    return nullptr;
-}
-RGBFrame* FrameQueue::popFront() {
-    bool tooBigQueue = items.size() > capacity;
-    bool firstIsNotUsed = selected > 0;
-    if (tooBigQueue && firstIsNotUsed) {
-        auto front = items.front();
-        items.pop_front();
-        selected--;
-        return front;
-    }
-    return nullptr;
 }
 int64_t FrameQueue::firstSeekPosition() {
     if (items.empty()) {
         return 0;
     }
-
-    auto front = items.front();
-    return front->pts - 1;
+    return prevSeekPosition(items.front());
 }
 int64_t FrameQueue::lastSeekPosition() {
     if (items.empty()) {
         return 0;
     }
-
-    auto last = items.back();
-    return last->pts + last->duration;
+    return nextSeekPosition(items.back());
 }
 

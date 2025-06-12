@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include "ffmpeg.h"
 #include "frame.h"
+#include "util/circlebuffer.h"
 
 using std::mutex;
 using std::vector;
@@ -111,10 +112,10 @@ public:
 };
 
 struct FrameQueue {
-    const int64_t capacity = 5;
-    const int64_t deltaMin = 1;
+    static constexpr int64_t capacity = 5;
+    static constexpr int64_t deltaMin = 1;
 
-    std::deque<RGBFrame*> items;
+    CircleBuffer<RGBFrame*, capacity, nullptr> items;
     int64_t selected = -1;
     int8_t loadDir = 1;
 
@@ -125,16 +126,13 @@ struct FrameQueue {
     void seekNextFrame(FrameLoader& loader);
     void seekPrevFrame(FrameLoader& loader);
     void fillFrom(FrameLoader& loader);
+    void flush(FrameLoader& loader);
 
 private:
     bool tooFarFromBegin() const;
     bool tooFarFromEnd() const;
     void tryFillBack(FrameLoader& loader);
     void tryFillFront(FrameLoader& loader);
-    bool pushBack(RGBFrame* frame);
-    bool pushFront(RGBFrame* frame);
-    RGBFrame* popBack();
-    RGBFrame* popFront();
     int64_t firstSeekPosition();
     int64_t lastSeekPosition();
 };

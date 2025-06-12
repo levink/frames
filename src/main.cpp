@@ -132,21 +132,17 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
             // minus 1 second
             auto oneSecond = info.MicrosToPts(1000000);
             auto pts = std::max(0LL, ps.framePts - oneSecond);
+           
+            // flush frameQ
+            frameQ.flush(loader);
+
+            // seek && flush loader
+            loader.seek(1, pts);
 
             // update UI
             ps.update = true;
             ps.framePts = pts;
             ps.progress = info.calcProgress(pts);
-           
-            // seek && flush loader
-            loader.seek(1, pts);
-            
-            // flush frameQ
-            for (auto item : frameQ.items) {
-                loader.putFrame(item);
-            }
-            frameQ.items.clear();
-            frameQ.selected = -1;
         }
     }
     else if (key.is(RIGHT)) {
@@ -159,20 +155,16 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
             auto oneSecond = info.MicrosToPts(1000000);
             auto pts = std::min(info.durationPts, ps.framePts + oneSecond);
 
-            // update UI
-            ps.update = true;
-            ps.framePts = pts;
-            ps.progress = info.calcProgress(pts);
+            // flush frameQ
+            frameQ.flush(loader);
 
             // seek && flush loader
             loader.seek(1, pts);
 
-            // flush frameQ
-            for (auto item : frameQ.items) {
-                loader.putFrame(item);
-            }
-            frameQ.items.clear();
-            frameQ.selected = -1;
+            // update UI
+            ps.update = true;
+            ps.framePts = pts;
+            ps.progress = info.calcProgress(pts);
         }
     }
 }
@@ -409,6 +401,7 @@ int main() {
         glfwPollEvents();
     }
 
+    frameQ.flush(loader);
     loader.stop();
     render.destroy();
     destroyImGui();

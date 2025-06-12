@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
+#include <vector>
 #include "util/circlebuffer.h"
 
+template<size_t capacity>
+struct IntBuffer : CircleBuffer<int, capacity, 0> { };
+
 TEST(HelloTest, CircleBuffer_accessByIndex) {	
-	CircleBuffer<int, 3, 0> buf;
+	IntBuffer<3> buf;
 	ASSERT_FALSE(buf.full());
 
 	buf.pushBack(1);
@@ -27,8 +31,28 @@ TEST(HelloTest, CircleBuffer_accessByIndex) {
 	ASSERT_EQ(5, buf[2]);
 }
 
+TEST(HelloTest, CircleBuffer_accessByFunc) {
+	IntBuffer<3> buf;
+
+	buf.pushBack(1);
+	buf.pushBack(2);
+	buf.pushBack(3);
+	buf.pushBack(4);
+
+	ASSERT_EQ(2, buf.front());
+	ASSERT_EQ(4, buf.back());
+
+	buf.pushBack(5);
+	ASSERT_EQ(3, buf.front());
+	ASSERT_EQ(5, buf.back());
+
+	buf.pushBack(6);
+	ASSERT_EQ(4, buf.front());
+	ASSERT_EQ(6, buf.back());
+}
+
 TEST(HelloTest, CircleBuffer_pushBack) {
-	CircleBuffer<int, 3, 0> buf;
+	IntBuffer<3> buf;
 	int prev = buf.pushBack(1);
 	ASSERT_FALSE(buf.full());
 	ASSERT_EQ(1, buf.size());
@@ -76,7 +100,7 @@ TEST(HelloTest, CircleBuffer_pushBack) {
 }
 
 TEST(HelloTest, CircleBuffer_pushFront) {
-	CircleBuffer<int, 3, 0> buf;
+	IntBuffer<3> buf;
 	int prev = buf.pushFront(1);
 	ASSERT_FALSE(buf.full());
 	ASSERT_EQ(1, buf.size());
@@ -124,7 +148,7 @@ TEST(HelloTest, CircleBuffer_pushFront) {
 }
 
 TEST(HelloTest, CircleBuffer_pushTwoSides) {
-	CircleBuffer<int, 3, 0> buf;
+	IntBuffer<3> buf;
 
 	int prev = buf.pushBack(1); // [1] -> 0
 	ASSERT_EQ(1, buf[0]);
@@ -173,7 +197,7 @@ TEST(HelloTest, CircleBuffer_pushTwoSides) {
 }
 
 TEST(HelloTest, CircleBuffer_popBack) {
-	CircleBuffer<int, 3, 0> buf;
+	IntBuffer<3> buf;
 	ASSERT_TRUE(buf.empty());
 
 	buf.pushBack(1);
@@ -211,7 +235,7 @@ TEST(HelloTest, CircleBuffer_popBack) {
 }
 
 TEST(HelloTest, CircleBuffer_popFront) {
-	CircleBuffer<int, 3, 0> buf;
+	IntBuffer<3> buf;
 	ASSERT_TRUE(buf.empty());
 
 	buf.pushBack(1);
@@ -232,4 +256,34 @@ TEST(HelloTest, CircleBuffer_popFront) {
 	ASSERT_EQ(5, buf.popFront());
 	ASSERT_EQ(0, buf.popFront());
 	ASSERT_EQ(0, buf.popFront());
+}
+
+TEST(HelloTest, CircleBuffer_iterator) {
+	IntBuffer<3> buf;
+	ASSERT_TRUE(buf.empty());
+	buf.pushBack(1);
+	buf.pushBack(2);
+	buf.pushBack(3);
+	buf.pushBack(4);
+	buf.pushBack(5);
+
+	std::vector<int> vals;
+	for (auto item : buf) {
+		vals.push_back(item);
+	}
+	ASSERT_EQ((std::vector{ 3, 4, 5 }), vals);
+	
+	buf.popFront();
+	vals.clear();
+	for (auto item : buf) {
+		vals.push_back(item);
+	}
+	ASSERT_EQ((std::vector{ 4, 5 }), vals);
+	
+	buf.clear();
+	bool hit = false;
+	for (auto item : buf) {
+		hit = true;
+	}
+	ASSERT_FALSE(hit);
 }
