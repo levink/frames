@@ -32,8 +32,8 @@ struct StreamInfo {
     int frameWidth;
     int frameHeight;
     float calcProgress(int64_t pts) const;
-    int64_t toMicros(int64_t pts) const;
-    int64_t toPts(int64_t micros) const;
+    int64_t PtsToMicros(int64_t pts) const;
+    int64_t MicrosToPts(int64_t micros) const;
 };
 
 struct FrameConverter {

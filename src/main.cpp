@@ -130,7 +130,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         }
         else {
             // minus 1 second
-            auto oneSecond = info.toPts(1000000);
+            auto oneSecond = info.MicrosToPts(1000000);
             auto pts = std::max(0LL, ps.framePts - oneSecond);
 
             // update UI
@@ -156,7 +156,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         }
         else {
             // plus 1 second
-            auto oneSecond = info.toPts(1000000);
+            auto oneSecond = info.MicrosToPts(1000000);
             auto pts = std::min(info.durationPts, ps.framePts + oneSecond);
 
             // update UI
@@ -334,13 +334,13 @@ int main() {
                 using std::chrono::steady_clock;
 
                 auto t2 = steady_clock::now();
-                auto duration = info.toPts(duration_cast<microseconds>(t2 - t1).count());
+                auto duration = info.MicrosToPts(duration_cast<microseconds>(t2 - t1).count());
                 if (duration > ps.frameDur || ps.update) {
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
                         auto deltaPts = duration - ps.frameDur;
                         if (deltaPts < frame->duration) {
-                            t1 = t2 - microseconds(info.toMicros(deltaPts));
+                            t1 = t2 - microseconds(info.PtsToMicros(deltaPts));
                         } else {
                             t1 = t2;
                         }
@@ -377,7 +377,10 @@ int main() {
             ImGuiWindowFlags_NoNavInputs | 
             ImGuiWindowFlags_NoNavFocus)) {
 
-            /*static float progress = player.progress;*/
+            /*
+                todo: need manual seek
+            */
+
             const auto& style = ImGui::GetStyle();
             float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
