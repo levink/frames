@@ -11,6 +11,16 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
+
+using std::chrono::microseconds;
+using std::chrono::milliseconds;
+using std::chrono::steady_clock;
+using std::chrono::duration_cast;
+
+static void seekProgress(float progress);
+static void seekPts(int64_t pts);
+
+
 struct SceneSize {
     
     /* Main window */
@@ -19,7 +29,7 @@ struct SceneSize {
     int windowPadding = 4;
     int sliderHeight = 0;
 
-    /* Render */
+    /* Render area */
     int left = 0;
     int bottom = 0;
     int width = 0;
@@ -59,6 +69,47 @@ StreamInfo info;
 PlayState ps;
 
 
+struct SlideDetector {
+    steady_clock::time_point last;
+    bool move = false;
+    bool hold = false;
+    bool pausedPrev = false;
+    
+    void update(bool changed, bool active, float progress) {
+
+        if (!hold && active) {
+            hold = true;
+            pausedPrev = ps.paused;
+            ps.paused = true;
+        }
+        else if (hold && !active) {
+            hold = false;
+            ps.paused = pausedPrev;
+        }
+
+        auto now = steady_clock::now();
+        auto dt = duration_cast<milliseconds>(now - last).count();
+        if (changed && !move) {
+            move = true;
+            last = now;
+            seekProgress(progress);
+            //std::cout << "move start" << std::endl;
+        }
+        else if (changed && move && dt > 25) {
+            last = now;
+            seekProgress(progress); //todo: works slow, try faster
+            //std::cout << "keep moving " << std::endl;
+        }
+        else if (!changed && move && dt > 50) {
+            move = false;
+            last = now;
+            seekProgress(progress);
+            //std::cout << "move stop" << std::endl;
+        }
+    }
+} slider;
+
+
 static GLuint createTexture(int width, int height) {
 
     GLuint videoTextureId = 0;
@@ -96,6 +147,26 @@ static void updateTexture(GLuint textureId, const RGBFrame& frame) {
         frame.pixels);          // Source data pointer
     glBindTexture(GL_TEXTURE_2D, 0);
 }
+static int64_t progressToPts(float progress) {
+    return (progress * info.durationPts) / 100.f;
+}
+static void seekProgress(float progress) {
+    auto pts = progressToPts(progress);
+    seekPts(pts);
+}
+static void seekPts(int64_t pts) {
+    // flush frameQ
+    frameQ.flush(loader);
+    frameQ.loadDir = 1;
+
+    // seek && flush loader
+    loader.seek(1, pts);
+
+    // update UI
+    ps.update = true;
+    ps.framePts = pts;
+    ps.progress = info.calcProgress(pts);
+}
 static void reshapeScene(int w, int h) {
     scene.reshape(w, h);
     render.reshape(scene.left, scene.bottom, scene.width, scene.height);
@@ -127,44 +198,26 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         if (ps.paused) {
             ps.update = true;
             frameQ.seekPrevFrame(loader);
+            frameQ.print();
         }
         else {
             // minus 1 second
             auto oneSecond = info.MicrosToPts(1000000);
             auto pts = std::max(0LL, ps.framePts - oneSecond);
-           
-            // flush frameQ
-            frameQ.flush(loader);
-
-            // seek && flush loader
-            loader.seek(1, pts);
-
-            // update UI
-            ps.update = true;
-            ps.framePts = pts;
-            ps.progress = info.calcProgress(pts);
+            seekPts(pts);
         }
     }
     else if (key.is(RIGHT)) {
         if (ps.paused) {
             ps.update = true;
             frameQ.seekNextFrame(loader);
+            frameQ.print();
         }
         else {
             // plus 1 second
             auto oneSecond = info.MicrosToPts(1000000);
             auto pts = std::min(info.durationPts, ps.framePts + oneSecond);
-
-            // flush frameQ
-            frameQ.flush(loader);
-
-            // seek && flush loader
-            loader.seek(1, pts);
-
-            // update UI
-            ps.update = true;
-            ps.framePts = pts;
-            ps.progress = info.calcProgress(pts);
+            seekPts(pts);
         }
     }
 }
@@ -299,18 +352,30 @@ int main() {
     loader.start();
 
     FpsCounter fps;
-    auto t1 = std::chrono::steady_clock::now();
+    auto t1 = steady_clock::now();
+
+
+    /*
+        todo:
+            draw points on video
+            select between modes: 
+                1. move/scale video
+                2. draw on video
+                3. playing/steps (?)
+            open file dialog - select file
+    */
+
+
 
     while (!glfwWindowShouldClose(window)) {
 
-        frameQ.fillFrom(loader);
+        auto now = steady_clock::now();
 
+        frameQ.fillFrom(loader);
         {
             if (ps.paused && ps.update) {        
                 const RGBFrame* frame = frameQ.curr();
                 if (frame) {
-                    frameQ.print();
-                    
                     ps.update = false;
                     ps.framePts = frame->pts;
                     ps.frameDur = frame->duration;
@@ -320,21 +385,16 @@ int main() {
                 }
             }
             else if (!ps.paused) {
-                //todo: need refactoring this
-                using std::chrono::microseconds;
-                using std::chrono::duration_cast;
-                using std::chrono::steady_clock;
 
-                auto t2 = steady_clock::now();
-                auto duration = info.MicrosToPts(duration_cast<microseconds>(t2 - t1).count());
+                auto duration = info.MicrosToPts(duration_cast<microseconds>(now - t1).count());
                 if (duration > ps.frameDur || ps.update) {
                     const RGBFrame* frame = frameQ.next();
                     if (frame) {
                         auto deltaPts = duration - ps.frameDur;
                         if (deltaPts < frame->duration) {
-                            t1 = t2 - microseconds(info.PtsToMicros(deltaPts));
+                            t1 = now - microseconds(info.PtsToMicros(deltaPts));
                         } else {
-                            t1 = t2;
+                            t1 = now;
                         }
 
                         if (ps.update) {
@@ -349,7 +409,7 @@ int main() {
                         updateTexture(render.frame[0].textureId, *frame);
                         updateTexture(render.frame[1].textureId, *frame);
                         
-                        fps.print();
+                        //fps.print();
                     }
                 }
             }
@@ -369,16 +429,16 @@ int main() {
             ImGuiWindowFlags_NoNavInputs | 
             ImGuiWindowFlags_NoNavFocus)) {
 
-            /*
-                todo: need manual seek
-            */
-
             const auto& style = ImGui::GetStyle();
             float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
             ImGui::PushItemWidth(itemWidth);
             bool changed1 = ImGui::SliderFloat("##slider1", &ps.progress, 0.0f, 100.0f, "%.f%%", flags);
+            bool active1 = ImGui::IsItemActive();
+            slider.update(changed1, active1, ps.progress);
+
             ImGui::SameLine(0.f, style.WindowPadding.x);
+
             bool changed2 = ImGui::SliderFloat("##slider2", &ps.progress, 0.0f, 100.0f, "%.f%%", flags);
             ImGui::PopItemWidth();
 

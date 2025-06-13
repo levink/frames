@@ -529,7 +529,9 @@ void FrameQueue::print() const {
 void FrameQueue::play(FrameLoader& loader) {
     if (loadDir < 0) {
         loadDir = 1;
-        auto seekPos = lastSeekPosition();
+        auto seekPos = items.empty() ? 
+            0 : //todo: maybe playState.framePts is better?
+            nextSeekPosition(items.back()); 
         loader.seek(loadDir, seekPos);
     }
 }
@@ -538,9 +540,9 @@ void FrameQueue::seekNextFrame(FrameLoader& loader) {
         selected++;
     }
 
-    if (loadDir < 0 && !tooFarFromEnd()) {
+    if (loadDir < 0 && !tooFarFromEnd() && !items.empty()) {
         loadDir = 1;
-        auto seekPos = lastSeekPosition();
+        auto seekPos = nextSeekPosition(items.back());
         loader.seek(loadDir, seekPos);
     }
 }
@@ -549,9 +551,9 @@ void FrameQueue::seekPrevFrame(FrameLoader& loader) {
         selected--;
     }
 
-    if (loadDir > 0 && !tooFarFromBegin()) {
+    if (loadDir > 0 && !tooFarFromBegin() && !items.empty()) {
         loadDir = -1;
-        auto seekPos = firstSeekPosition();
+        auto seekPos = prevSeekPosition(items.front());
         loader.seek(loadDir, seekPos);
     }
 }
@@ -570,7 +572,7 @@ void FrameQueue::flush(FrameLoader& loader) {
         loader.putFrame(item);
     }
     items.clear();
-    selected = -1;
+    selected = 0;
 }
 bool FrameQueue::tooFarFromBegin() const {
     return selected > deltaMin;
@@ -621,16 +623,3 @@ void FrameQueue::tryFillFront(FrameLoader& loader) {
         selected++;
     }
 }
-int64_t FrameQueue::firstSeekPosition() {
-    if (items.empty()) {
-        return 0;
-    }
-    return prevSeekPosition(items.front());
-}
-int64_t FrameQueue::lastSeekPosition() {
-    if (items.empty()) {
-        return 0;
-    }
-    return nextSeekPosition(items.back());
-}
-

@@ -133,6 +133,4 @@ private:
     bool tooFarFromEnd() const;
     void tryFillBack(FrameLoader& loader);
     void tryFillFront(FrameLoader& loader);
-    int64_t firstSeekPosition();
-    int64_t lastSeekPosition();
 };
