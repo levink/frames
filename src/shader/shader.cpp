@@ -15,15 +15,15 @@ void VideoShader::disable() const {
     Shader::disable();
     glDisable(GL_TEXTURE_2D);
 }
-void VideoShader::draw(const Camera& camera, const Mesh& mesh, GLuint textureId) {
-    const ViewPort& vp = camera.vp;
-    glViewport(vp.left, vp.bottom, vp.width, vp.height);
-    glBindTexture(GL_TEXTURE_2D, textureId);
+void VideoShader::draw(const FrameView& frame) {
+    const auto& vp = frame.vp;
+    glViewport(vp.x, vp.y, vp.w, vp.h);
+    glBindTexture(GL_TEXTURE_2D, frame.textureId);
     set1(u[0], 0);
-    set4(u[1], camera.ortho);
-    set4(u[2], mesh.modelMatrix);
-    attr(a[0], mesh.position);
-    attr(a[1], mesh.texture);
-    drawFaces(mesh.face);
+    set4(u[1], frame.cam.ortho);
+    set4(u[2], frame.mesh.modelMatrix);
+    attr(a[0], frame.mesh.position);
+    attr(a[1], frame.mesh.texture);
+    drawFaces(frame.mesh.face);
     glBindTexture(GL_TEXTURE_2D, 0);
 }

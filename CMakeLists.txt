@@ -17,6 +17,7 @@ add_executable(app
     lib/imgui/backends/imgui_impl_opengl3.cpp
 	src/image/lodepng.cpp
 	src/model/camera.cpp
+	src/model/frame.cpp
 	src/model/mesh.cpp
 	src/shader/shader.cpp
 	src/shader/shaderBase.cpp

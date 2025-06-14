@@ -22,32 +22,21 @@ static void seekPts(int64_t pts);
 
 
 struct SceneSize {
-    
+    /* Styles */
+    int windowPadding = 4;
+
+    /* Sizes depends on style only */
+    int sliderHeight = 0;
+
     /* Main window */
     int windowWidth = 0;
     int windowHeight = 0;
-    int windowPadding = 4;
-    int sliderHeight = 0;
-
-    /* Render area */
-    int left = 0;
-    int bottom = 0;
-    int width = 0;
-    int height = 0;
     
-    void reshape(int w, int h) {
-        windowWidth = w;
-        windowHeight = h;
-
+    void updateStyleSizes() {
         const ImGuiStyle& style = ImGui::GetStyle();
         sliderHeight = ImGui::GetFontSize() +
             style.FramePadding.y * 2 +
             style.WindowPadding.y * 2;
-
-        left = 0;
-        bottom = sliderHeight;
-        width = windowWidth;
-        height = windowHeight - sliderHeight;
     }
 };
 
@@ -168,8 +157,22 @@ static void seekPts(int64_t pts) {
     ps.progress = info.calcProgress(pts);
 }
 static void reshapeScene(int w, int h) {
-    scene.reshape(w, h);
-    render.reshape(scene.left, scene.bottom, scene.width, scene.height);
+    
+    scene.windowWidth = w;
+    scene.windowHeight = h;
+
+    const int fw = w / 2;
+    const int fh = h - scene.sliderHeight;
+
+    render.frame[0].leftTop = { 0, 0 };
+    render.frame[0].size = { fw, fh };
+    render.frame[0].vp = { 0, scene.windowHeight - fh, fw, fh };
+    render.frame[0].cam.reshape(fw, fh);
+
+    render.frame[1].leftTop = { fw, 0 };
+    render.frame[1].size = { w - fw, fh };
+    render.frame[1].vp = { fw, scene.windowHeight - fh, w - fw, fh };
+    render.frame[1].cam.reshape(w - fw, fh);
 }
 static void reshape(GLFWwindow*, int w, int h) {
     reshapeScene(w, h);
@@ -224,6 +227,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
 static void mouseCallback(ui::mouse::MouseEvent event) {
     using namespace ui;
     using namespace ui::mouse;
+
     if (event.is(Action::MOVE, Button::LEFT)) {
         auto delta = event.getDelta();
         render.move(delta);
@@ -250,7 +254,7 @@ static void mouseMove(GLFWwindow* w, double x, double y) {
     }
 
     auto mx = static_cast<int>(x);
-    auto my = static_cast<int>(scene.windowHeight - y);
+    auto my = static_cast<int>(y);
     auto event = ui::mouse::move(mx, my);
     mouseCallback(event);
 }
@@ -303,6 +307,8 @@ static void initImGui(GLFWwindow* window) {
     ImGui::NewFrame();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    scene.updateStyleSizes();
 }
 static void destroyImGui() {
     ImGui::PopStyleVar(2);
@@ -311,6 +317,17 @@ static void destroyImGui() {
     ImGui::DestroyContext();
 }
 
+
+/*
+    todo:
+        precompute PV_inverse matrix in FrameView
+        draw points on video
+        select between modes:
+            1. move/scale video
+            2. draw on video
+            3. playing/steps (?)
+        open file dialog - select file
+*/
 int main() {
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
@@ -353,19 +370,6 @@ int main() {
 
     FpsCounter fps;
     auto t1 = steady_clock::now();
-
-
-    /*
-        todo:
-            draw points on video
-            select between modes: 
-                1. move/scale video
-                2. draw on video
-                3. playing/steps (?)
-            open file dialog - select file
-    */
-
-
 
     while (!glfwWindowShouldClose(window)) {
 

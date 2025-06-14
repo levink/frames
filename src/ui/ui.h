@@ -97,8 +97,8 @@ namespace ui {
             bool is(Action action) const;
             bool is(Action action, Button button) const;
             bool is(Action action, Button button, KeyMod mod) const;
-            glm::vec2 getDelta() const;
-            glm::vec2 getCursor();
+            glm::ivec2 getDelta() const;
+            glm::ivec2 getCursor();
         };
 
         MouseEvent move(int x, int y);
@@ -112,7 +112,7 @@ namespace ui {
 
         bool is(KeyMod mod);
         void print();
-        glm::vec2 getCursor();
+        glm::ivec2 getCursor();
     };
 
     static UIState ui_state{

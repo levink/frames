@@ -13,16 +13,10 @@ void Render::loadShaders() {
 void Render::reloadShaders() {
 	reloadShader(shader_path::video, shaders.videoSource, shaders.video);
 }
-void Render::reshape(int x, int y, int w, int h) {
-	const int width = 0.5f * w;
-	const int padding = 0;
-	frame[0].cam.reshape(x, y, width - padding, h);
-	frame[1].cam.reshape(x + width + padding, y, w - width - padding, h);
-}
 void Render::draw() {
 	shaders.video.enable();
-	shaders.video.draw(frame[0].cam, frame[0].mesh, frame[0].textureId);
-	shaders.video.draw(frame[1].cam, frame[1].mesh, frame[1].textureId);
+	shaders.video.draw(frame[0]);
+	shaders.video.draw(frame[1]);
 	shaders.video.disable();
 }
 void Render::destroy() {
@@ -33,7 +27,7 @@ void Render::select(const glm::vec2& cursor) {
 
 	int index = 0;
 	for (auto& item : frame) {
-		bool hit = item.cam.vp.hit(cursor.x, cursor.y);
+		bool hit = item.hit(cursor.x, cursor.y);
 		if (hit) {
 			selected = index;
 			break;
@@ -41,11 +35,17 @@ void Render::select(const glm::vec2& cursor) {
 		index++;
 	}
 
-	/*std::cout << cursor.y << std::endl;*/
+	if (selected != -1) {
+		auto& f = frame[selected];
+		auto point2D = f.toOpenGLSpace(cursor);
+		auto point4D = glm::inverse(f.cam.ortho * f.mesh.modelMatrix) * glm::vec4(point2D.x, point2D.y, 0.5f, 1.f);
+		auto point3D = glm::vec3(point4D / point4D.w);
+		std::cout << point3D.x << " " << point3D.y << std::endl;
+	}
 }
 void Render::move(const glm::vec2& delta) {
 	if (selected > -1) {
-		frame[selected].mesh.move(delta.x, delta.y);
+		frame[selected].mesh.move(delta.x, -delta.y);
 	}
 }
 void Render::zoom(float value) {

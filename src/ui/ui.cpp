@@ -32,8 +32,8 @@ void UIState::print() {
         << "mousePressed=" << (int)this->mousePressed
         << std::endl;
 }
-glm::vec2 UIState::getCursor() {
-    return glm::vec2(x, y);
+glm::ivec2 UIState::getCursor() {
+    return glm::ivec2(x, y);
 }
 
 namespace ui {
@@ -134,10 +134,10 @@ namespace ui {
             bool modCheck = ui_state.is(mod);
             return modCheck;
         }
-        glm::vec2 MouseEvent::getDelta() const {
-            return glm::vec2(dx, dy);
+        glm::ivec2 MouseEvent::getDelta() const {
+            return glm::ivec2(dx, dy);
         }
-        glm::vec2 MouseEvent::getCursor() {
+        glm::ivec2 MouseEvent::getCursor() {
             return ui_state.getCursor();
         }
     }
