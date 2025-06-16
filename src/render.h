@@ -9,7 +9,7 @@ struct Shaders {
 
 struct Render {
 	Shaders shaders;
-	FrameView frame[2];
+	FrameView frames[2];
 	int selected = -1;
 
 	void loadShaders();
@@ -18,9 +18,9 @@ struct Render {
 	void destroy();
 
 	void select(const glm::vec2& cursor);
-	void move(const glm::vec2& delta);
+	void move(int dx, int dy);
 	void zoom(float value);
 
 	void createFrame(size_t frameIndex, GLuint textureId, int imageWidth, int imageHeight);
-	void destroyFrame() { /*TODO: not implemented*/ }
+	void destroyFrame();
 };

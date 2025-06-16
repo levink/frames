@@ -33,7 +33,7 @@ void UIState::print() {
         << std::endl;
 }
 glm::ivec2 UIState::getCursor() {
-    return glm::ivec2(x, y);
+    return { x, y };
 }
 
 namespace ui {
@@ -135,7 +135,7 @@ namespace ui {
             return modCheck;
         }
         glm::ivec2 MouseEvent::getDelta() const {
-            return glm::ivec2(dx, dy);
+            return { dx, dy };
         }
         glm::ivec2 MouseEvent::getCursor() {
             return ui_state.getCursor();

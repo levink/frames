@@ -15,8 +15,8 @@ void Render::reloadShaders() {
 }
 void Render::draw() {
 	shaders.video.enable();
-	shaders.video.draw(frame[0]);
-	shaders.video.draw(frame[1]);
+	shaders.video.draw(frames[0]);
+	shaders.video.draw(frames[1]);
 	shaders.video.disable();
 }
 void Render::destroy() {
@@ -26,7 +26,7 @@ void Render::select(const glm::vec2& cursor) {
 	selected = -1;
 
 	int index = 0;
-	for (auto& item : frame) {
+	for (auto& item : frames) {
 		bool hit = item.hit(cursor.x, cursor.y);
 		if (hit) {
 			selected = index;
@@ -36,26 +36,32 @@ void Render::select(const glm::vec2& cursor) {
 	}
 
 	if (selected != -1) {
-		auto& f = frame[selected];
-		auto point2D = f.toOpenGLSpace(cursor);
-		auto point4D = glm::inverse(f.cam.ortho * f.mesh.modelMatrix) * glm::vec4(point2D.x, point2D.y, 0.5f, 1.f);
-		auto point3D = glm::vec3(point4D / point4D.w);
-		std::cout << point3D.x << " " << point3D.y << std::endl;
+		auto& frame = frames[selected];
+		auto point = frame.toSceneSpace(cursor);
+		std::cout << point.x << " " << point.y << std::endl;
 	}
 }
-void Render::move(const glm::vec2& delta) {
+
+void Render::move(int dx, int dy) {
 	if (selected > -1) {
-		frame[selected].mesh.move(delta.x, -delta.y);
+		auto& frame = frames[selected];
+		frame.cam.move(dx, -dy);
 	}
 }
 void Render::zoom(float value) {
 	if (selected > -1) {
-		frame[selected].mesh.zoom(value * 0.1);
+		auto& frame = frames[selected];
+		frame.cam.zoom(value * 0.1f);
 	}
 }
-void Render::createFrame(size_t frameIndex, GLuint textureId, int imageWidth, int imageHeight) {
-	frame[frameIndex].textureId = textureId;
-	frame[frameIndex].mesh.setSize(imageWidth, imageHeight);
-	//todo: probably scale here
-	//todo: implement destroyFrame()
+void Render::createFrame(size_t frameIndex, GLuint textureId, int width, int height) {
+	
+	auto& frame = frames[frameIndex];
+	frame.textureId = textureId;
+	frame.mesh = Mesh::createImageMesh(width, height);
+	frame.cam.init({ -width / 2, -height / 2 }, 1.f);
+
+}
+void Render::destroyFrame() { /* TODO: not implemented */
+
 }

@@ -161,18 +161,30 @@ static void reshapeScene(int w, int h) {
     scene.windowWidth = w;
     scene.windowHeight = h;
 
-    const int fw = w / 2;
-    const int fh = h - scene.sliderHeight;
+    const int frameWidth = scene.windowWidth / 2;
+    const int frameHeight = scene.windowHeight - scene.sliderHeight;
 
-    render.frame[0].leftTop = { 0, 0 };
-    render.frame[0].size = { fw, fh };
-    render.frame[0].vp = { 0, scene.windowHeight - fh, fw, fh };
-    render.frame[0].cam.reshape(fw, fh);
-
-    render.frame[1].leftTop = { fw, 0 };
-    render.frame[1].size = { w - fw, fh };
-    render.frame[1].vp = { fw, scene.windowHeight - fh, w - fw, fh };
-    render.frame[1].cam.reshape(w - fw, fh);
+    {
+        int left = 0;
+        int top = 0;
+        int right = left + frameWidth;
+        int bottom = top + frameHeight;
+        render.frames[0].leftTop = { left, top };
+        render.frames[0].viewPort = { left, scene.windowHeight - bottom };
+        render.frames[0].viewSize = { right - left, bottom - top };
+        render.frames[0].cam.reshape(right - left, bottom - top);
+    }
+    
+    {
+        int left = frameWidth;
+        int top = 0;
+        int right = left + frameWidth;
+        int bottom = top + frameHeight;
+        render.frames[1].leftTop = { left, top };
+        render.frames[1].viewPort = { left, scene.windowHeight - bottom };
+        render.frames[1].viewSize = { right - left, bottom - top };
+        render.frames[1].cam.reshape(right - left, bottom - top);
+    }
 }
 static void reshape(GLFWwindow*, int w, int h) {
     reshapeScene(w, h);
@@ -230,7 +242,7 @@ static void mouseCallback(ui::mouse::MouseEvent event) {
 
     if (event.is(Action::MOVE, Button::LEFT)) {
         auto delta = event.getDelta();
-        render.move(delta);
+        render.move(delta.x, delta.y);
     }
     else if (event.is(Action::MOVE, Button::NO)) {
         auto cursor = event.getCursor();
@@ -320,13 +332,15 @@ static void destroyImGui() {
 
 /*
     todo:
-        precompute PV_inverse matrix in FrameView
         draw points on video
+        
+        open file dialog - select file
+
         select between modes:
             1. move/scale video
             2. draw on video
             3. playing/steps (?)
-        open file dialog - select file
+       
 */
 int main() {
     if (!glfwInit()) {
@@ -384,8 +398,8 @@ int main() {
                     ps.framePts = frame->pts;
                     ps.frameDur = frame->duration;
                     ps.progress = info.calcProgress(frame->pts);
-                    updateTexture(render.frame[0].textureId, *frame);
-                    updateTexture(render.frame[1].textureId, *frame);
+                    updateTexture(render.frames[0].textureId, *frame);
+                    updateTexture(render.frames[1].textureId, *frame);
                 }
             }
             else if (!ps.paused) {
@@ -410,8 +424,8 @@ int main() {
                             ps.progress = info.calcProgress(frame->pts);
                         }
                         
-                        updateTexture(render.frame[0].textureId, *frame);
-                        updateTexture(render.frame[1].textureId, *frame);
+                        updateTexture(render.frames[0].textureId, *frame);
+                        updateTexture(render.frames[1].textureId, *frame);
                         
                         //fps.print();
                     }
