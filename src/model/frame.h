@@ -12,7 +12,7 @@ struct FrameView {
     
 	Camera cam;
 	Mesh mesh;
-	GLuint textureId;
+	GLuint textureId = 0;
 
     bool hit(int x, int y) const;
     glm::vec2 toOpenGLSpace(const glm::ivec2& cursor) const;

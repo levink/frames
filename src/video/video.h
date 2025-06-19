@@ -27,14 +27,15 @@ public:
 };
 
 struct StreamInfo {
-    AVRational time_base;
-    int64_t durationPts;
-    int64_t framesCount;
-    int frameWidth;
-    int frameHeight;
+    AVRational time_base = {0, 1};
+    int64_t durationPts  = 0;
+    int64_t framesCount  = 0;
+    int width            = 0;
+    int height           = 0;
     float calcProgress(int64_t pts) const;
-    int64_t PtsToMicros(int64_t pts) const;
-    int64_t MicrosToPts(int64_t micros) const;
+    int64_t ptsToMicros(int64_t pts) const;
+    int64_t microsToPts(int64_t micros) const;
+    int64_t progressToPts(float progress) const;
 };
 
 struct FrameConverter {

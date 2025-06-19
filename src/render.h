@@ -3,8 +3,9 @@
 #include "shader/shader.h"
 
 struct Shaders {
+	//todo: really need split on source + shader?
 	ShaderSource videoSource;
-	VideoShader video;
+	VideoShader videoShader;
 };
 
 struct Render {
@@ -14,13 +15,14 @@ struct Render {
 
 	void loadShaders();
 	void reloadShaders();
-	void draw();
-	void destroy();
+	void destroyShaders();
 
+	void createFrame(size_t frameIndex, int16_t width, int16_t height);
+	void updateFrame(size_t frameIndex, int16_t width, int16_t height, uint8_t* pixels);
+	void destroyFrames();
+
+	void draw();
 	void select(const glm::vec2& cursor);
 	void move(int dx, int dy);
 	void zoom(float value);
-
-	void createFrame(size_t frameIndex, GLuint textureId, int imageWidth, int imageHeight);
-	void destroyFrame();
 };

@@ -79,15 +79,18 @@ float StreamInfo::calcProgress(int64_t pts) const {
     if (value > 100.f) return 100.f;
     return value;
 }
-int64_t StreamInfo::PtsToMicros(int64_t pts) const {
+int64_t StreamInfo::ptsToMicros(int64_t pts) const {
     auto num = pts * time_base.num * 1000000;
     auto den = time_base.den;
     return num / den;
 }
-int64_t StreamInfo::MicrosToPts(int64_t micros) const {
+int64_t StreamInfo::microsToPts(int64_t micros) const {
     auto num = micros * time_base.den;
     auto den = 1000000 * time_base.num;
     return num / den;
+}
+int64_t StreamInfo::progressToPts(float progress) const {
+    return (progress * durationPts) / 100.f; //todo: trunc [0, maxPts]?
 }
 
 
