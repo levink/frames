@@ -33,6 +33,7 @@ protected:
     constexpr static const GLSLType VEC_2 = GLSLType{ 2, GL_FLOAT };
     constexpr static const GLSLType VEC_3 = GLSLType{ 3, GL_FLOAT };
 
+    static void setViewPort(const glm::vec2& leftBottom, const glm::vec2& size);
     static void attr(const Attribute& attribute, const void* data, GLsizei stride, GLuint offset);
     static void attr(const Attribute& attribute, GLsizei stride, GLuint offset);
     static void attr(const Attribute& attribute, const std::vector<float>& data);

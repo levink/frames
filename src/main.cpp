@@ -1,4 +1,4 @@
-﻿#include <glad/glad.h>
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <chrono>
@@ -11,17 +11,18 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
+using std::cout;
+using std::endl;
 using std::chrono::microseconds;
 using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 using std::chrono::duration_cast;
 
-//todo: move to render?
-struct SceneSize {
+struct Scene {
     /* Styles */
     int windowPadding = 4;
 
-    /* Sizes depends on style only */
+    /* Sizes depends on ImGui::Style only */
     int sliderHeight = 0;
 
     /* Main window */
@@ -37,13 +38,15 @@ struct PlayState {
     int64_t frameDur = 0;   // last seen frame duration
 };
 
-// Detects manual seek: when user is changing the slider by hands
-struct FrameSlider {
+
+struct SlideDetector {
     steady_clock::time_point last;
     bool move = false;
     bool hold = false;
     bool paused = false;
-    bool update(const steady_clock::time_point& now, PlayState& ps, bool changed, bool active) {
+
+    // Detects manual seeking: when user is changing the UI-slider by hands
+    bool hasManualSeek(const steady_clock::time_point& now, PlayState& ps, bool changed, bool active) {
         if (!hold && active) {
             hold = true;
             paused = ps.paused;
@@ -222,13 +225,15 @@ struct PlayController {
 };
 
 
+Scene scene;
 Render render;
-SceneSize scene;
 PlayController player(render);
 
 
-static void reshapeScene(int w, int h) {
+static void reshape(int w, int h) {
     
+    //cout << "reshape w=" << w << " h=" << h << endl;
+
     scene.windowWidth = w;
     scene.windowHeight = h;
 
@@ -257,8 +262,8 @@ static void reshapeScene(int w, int h) {
         render.frames[1].cam.reshape(right - left, bottom - top);
     }
 }
-static void reshape(GLFWwindow*, int w, int h) {
-    reshapeScene(w, h);
+static void reshapeWindow(GLFWwindow*, int w, int h) {
+    reshape(w, h);
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
@@ -335,7 +340,7 @@ static bool loadGLES(GLFWwindow* window) {
 static void initWindow(GLFWwindow* window) {
     glfwWindowHint(GLFW_DEPTH_BITS, 16);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
-    glfwSetFramebufferSizeCallback(window, reshape);
+    glfwSetFramebufferSizeCallback(window, reshapeWindow);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetMouseButtonCallback(window, mouseClick);
     glfwSetCursorPosCallback(window, mouseMove);
@@ -349,7 +354,7 @@ static void initImGui(GLFWwindow* window) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    /*io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;*/
     ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
@@ -366,10 +371,10 @@ static void initImGui(GLFWwindow* window) {
 
     //Update scene sizes depends on styles
     const ImGuiStyle& style = ImGui::GetStyle();
-    scene.sliderHeight = 
-        ImGui::GetFontSize() +
-        style.FramePadding.y * 2 +
-        style.WindowPadding.y * 2;
+    scene.sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
+
+
+    io.Fonts->GetGlyphRangesCyrillic();
 }
 static void destroyImGui() {
     ImGui::PopStyleVar(2);
@@ -380,11 +385,9 @@ static void destroyImGui() {
 
 
 /*
-    todo:
+    Todo:
         open file dialog - select file
-
         draw points on video
-        
         select between modes:
             1. move/scale video
             2. draw on video
@@ -394,6 +397,8 @@ static void destroyImGui() {
 //#include <filesystem>
 
 int main(int argc, char* argv[]) {
+
+    // setlocale(LC_ALL, "Russian");
 
     //{
     //    using std::cout;
@@ -438,10 +443,9 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     render.loadShaders();
-
     initWindow(window);
     initImGui(window);
-    reshapeScene(windowWidth, windowHeight);
+    reshape(windowWidth, windowHeight);
 
 
     const char* fileName = "C:/Users/Konst/Desktop/IMG_3504.MOV";
@@ -456,7 +460,7 @@ int main(int argc, char* argv[]) {
     render.createFrame(1, player.info.width, player.info.height);
   
     FpsCounter fps;
-    FrameSlider slider;
+    SlideDetector slider;
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -465,54 +469,72 @@ int main(int argc, char* argv[]) {
             const RGBFrame* rgb = player.currentFrame();
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
             render.updateFrame(1, rgb->width, rgb->height, rgb->pixels);
+            fps.print();
         }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-        const auto& workSize = main_viewport->WorkSize;
-        ImGui::SetNextWindowPos(ImVec2(0, workSize.y - scene.sliderHeight), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(workSize.x, scene.sliderHeight), ImGuiCond_Always);
-        if (ImGui::Begin("SlidersWindow", nullptr, 
-            ImGuiWindowFlags_NoBackground |
-            ImGuiWindowFlags_NoDecoration | 
-            ImGuiWindowFlags_NoNavInputs | 
-            ImGuiWindowFlags_NoNavFocus)) {
+        const auto* viewPort = ImGui::GetMainViewport();
+        const auto& workSize = viewPort->WorkSize;
+
+        {
+            ImGui::SetNextWindowPos(ImVec2(0, workSize.y - scene.sliderHeight), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(workSize.x, scene.sliderHeight), ImGuiCond_Always);
+            ImGui::Begin("SlidersWindow", nullptr,
+                ImGuiWindowFlags_NoBackground |
+                ImGuiWindowFlags_NoDecoration |
+                ImGuiWindowFlags_NoNavInputs |
+                ImGuiWindowFlags_NoNavFocus);
 
             const auto& style = ImGui::GetStyle();
             float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
             ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
             ImGui::PushItemWidth(itemWidth);
-            
             {
                 // todo: use static progress here instead of ps.progress?
                 // update ps.progress inside the slider.update(...)?
+                ImGui::PushID(0);
                 PlayState& ps = player.ps;
-                bool changed = ImGui::SliderFloat("##slider1", &ps.progress, 0.0f, 100.0f, "", flags); 
+                bool changed = ImGui::SliderFloat("", &ps.progress, 0.0f, 100.0f, "", flags);
                 bool active = ImGui::IsItemActive();
-                bool needSeek = slider.update(now, ps, changed, active);
-                if (needSeek) {
+                bool hasSeek = slider.hasManualSeek(now, ps, changed, active);
+                if (hasSeek) {
                     player.seekProgress(ps.progress);
-                }       
+                }
+                ImGui::PopID();
             }
-
             {
+                ImGui::PushID(1);
                 ImGui::SameLine(0.f, style.WindowPadding.x);
                 static float progress = 0.f;
-                bool changed = ImGui::SliderFloat("##slider2", &progress, 0.0f, 100.0f, "", flags);
+                bool changed = ImGui::SliderFloat("", &progress, 0.0f, 100.0f, "", flags);
                 bool active = ImGui::IsItemActive();
-                //todo: update another slider for another video
+                //todo: update another slider for another video stream
                 //slider.update(changed, active, ps.progress);
+                ImGui::PopID();
             }
             ImGui::PopItemWidth();
-        }        
-        ImGui::End();
-        //ImGui::ShowDemoWindow();
+            ImGui::End();
+        }
+        
+        {
+            static bool opened = true;
+            ImGui::SetNextWindowSize(ImVec2(500, 200), ImGuiCond_FirstUseEver);
+            ImGui::Begin("FolderWindow", &opened, ImGuiWindowFlags_None);
+            ImGui::Text("MyObject1");
+            ImGui::Text("MyObject2");
+            ImGui::Text("MyObject3");
+            ImGui::Text("MyObject4");
+            ImGui::Text("MyObject5");
+            ImGui::End();
 
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+           
+        }        
+
+        ImGui::DebugTextEncoding("Привет");
+
         render.draw();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

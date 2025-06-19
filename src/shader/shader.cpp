@@ -16,9 +16,7 @@ void VideoShader::disable() const {
     glDisable(GL_TEXTURE_2D);
 }
 void VideoShader::draw(const FrameView& frame) {
-    const auto& vp = frame.viewPort;
-    const auto& size = frame.viewSize;
-    glViewport(vp.x, vp.y, size.x, size.y);
+    setViewPort(frame.viewPort, frame.viewSize);
     glBindTexture(GL_TEXTURE_2D, frame.textureId);
     set1(u[0], 0);
     set4(u[1], frame.cam.proj);

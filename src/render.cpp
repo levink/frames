@@ -71,6 +71,9 @@ void Render::destroyFrames() {
 	}
 }
 void Render::draw() {
+	glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
 	shaders.videoShader.enable();
 	shaders.videoShader.draw(frames[0]);
 	shaders.videoShader.draw(frames[1]);
