@@ -354,7 +354,6 @@ static void initImGui(GLFWwindow* window) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    /*io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;*/
     ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
@@ -372,9 +371,6 @@ static void initImGui(GLFWwindow* window) {
     //Update scene sizes depends on styles
     const ImGuiStyle& style = ImGui::GetStyle();
     scene.sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
-
-
-    io.Fonts->GetGlyphRangesCyrillic();
 }
 static void destroyImGui() {
     ImGui::PopStyleVar(2);
@@ -397,8 +393,6 @@ static void destroyImGui() {
 //#include <filesystem>
 
 int main(int argc, char* argv[]) {
-
-    // setlocale(LC_ALL, "Russian");
 
     //{
     //    using std::cout;
