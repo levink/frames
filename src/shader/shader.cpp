@@ -15,7 +15,7 @@ void VideoShader::disable() const {
     Shader::disable();
     glDisable(GL_TEXTURE_2D);
 }
-void VideoShader::draw(const FrameView& frame) {
+void VideoShader::draw(const Frame& frame) {
     setViewPort(frame.viewPort, frame.viewSize);
     glBindTexture(GL_TEXTURE_2D, frame.textureId);
     set1(u[0], 0);

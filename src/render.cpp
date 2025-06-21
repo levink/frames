@@ -62,6 +62,10 @@ void Render::updateFrame(size_t frameIndex, int16_t width, int16_t height, uint8
 	const auto& frame = frames[frameIndex];
 	updateTexture(frame.textureId, width, height, pixels);
 }
+void Render::reshapeFrame(size_t frameIndex, int left, int top, int width, int height, int screenHeight) {
+	auto& frame = frames[frameIndex];
+	frame.reshape(left, top, width, height, screenHeight);
+}
 void Render::destroyFrames() {
 	for (auto& frame : frames) {
 		if (frame.textureId) {

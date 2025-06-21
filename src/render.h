@@ -10,7 +10,7 @@ struct Shaders {
 
 struct Render {
 	Shaders shaders;
-	FrameView frames[2];
+	Frame frames[2];
 	int selected = -1;
 
 	void loadShaders();
@@ -19,6 +19,7 @@ struct Render {
 
 	void createFrame(size_t frameIndex, int16_t width, int16_t height);
 	void updateFrame(size_t frameIndex, int16_t width, int16_t height, uint8_t* pixels);
+	void reshapeFrame(size_t frameIndex, int left, int top, int width, int height, int screenHeight);
 	void destroyFrames();
 
 	void draw();

@@ -326,30 +326,30 @@ namespace ui {
 
     struct Slider {
         float progress = 0;
-        bool changed = false;
+        bool changedByUser = false;
     private:
         bool hold = false;
         float progressLast = 0;
         steady_clock::time_point lastUpdate;
     public:
         void update(bool active) {
-            changed = false;
+            changedByUser = false;
 
             if (!hold && active) {
                 hold = true;
-                changed = valueChanged(steady_clock::now());
+                changedByUser = valueChanged(steady_clock::now());
                 return;
             }
             if (hold && !active) {
                 hold = false;
-                changed = valueChanged(steady_clock::now());
+                changedByUser = valueChanged(steady_clock::now());
                 return;
             }
             if (hold) {
                 auto now = steady_clock::now();
                 auto delta = duration_cast<milliseconds>(now - lastUpdate).count();
                 if (delta > 250) {
-                    changed = valueChanged(now);
+                    changedByUser = valueChanged(now);
                 }
             }
         }
@@ -366,19 +366,33 @@ namespace ui {
     };
 
     struct Viewport {
-        int x = 0;
-        int y = 0;
-        int w = 0;
-        int h = 0;
+        ImVec2 cursor;
+        ImVec2 region;
+        bool changed = false;
+        void update(const ImVec2& cursor, const ImVec2& region) {
+            changed = 
+                this->cursor.x != cursor.x || 
+                this->cursor.y != cursor.y ||
+                this->region.x != region.x || 
+                this->region.y != region.y;
+            if (changed) {
+                this->cursor = cursor;
+                this->region = region;
+            }
+        }
     };
 
     struct FrameView {
         const char* name;
+        ImVec2 position;
+        ImVec2 size;
         Viewport viewPort;
         Slider slider;
         
         explicit FrameView(const char* name) : name(name) { }
-        void draw(const ImVec2& position, const ImVec2& size) {
+        void draw(float progress) {
+
+            slider.progress = progress;
 
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::SetNextWindowPos(position, ImGuiCond_Appearing);
@@ -386,27 +400,19 @@ namespace ui {
 
             constexpr int padding = 8;
             ImGuiWindowFlags flags =
-                ImGuiWindowFlags_NoTitleBar |
+                //ImGuiWindowFlags_NoTitleBar |
+                //ImGuiWindowFlags_NoInputs |
                 ImGuiWindowFlags_NoBackground;
             ImGui::Begin(name, nullptr, flags);
-
-            ImGui::IsWindowCollapsed();
 
             //frame
             {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-                ImGui::BeginChild("frame", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - padding * 2));
-                ImVec2 view_p0 = ImGui::GetCursorScreenPos();
-                ImVec2 view_sz = ImGui::GetContentRegionAvail();
-                const int offsetFromWindowLeft = view_p0.x;
-                const int offsetFromWindowBottom = ImGui::GetMainViewport()->WorkSize.y - (view_p0.y + view_sz.y);
-                viewPort.x = offsetFromWindowLeft;
-                viewPort.y = offsetFromWindowBottom;
-                viewPort.w = view_sz.x;
-                viewPort.h = view_sz.y;
-
-                const ImVec2 size = ImGui::GetContentRegionAvail();
-                ImGui::InvisibleButton("test", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+                ImGui::BeginChild("frame");
+                auto cursor = ImGui::GetCursorScreenPos();
+                auto region = ImGui::GetContentRegionAvail();
+                viewPort.update(cursor, region);
+                //ImGui::InvisibleButton("test", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
                 /*const bool button_hovered = ImGui::IsItemHovered();
                 const bool button_active = ImGui::IsItemActive();
                 if (button_hovered) {
@@ -421,6 +427,9 @@ namespace ui {
 
             //slider
             {
+                auto cursor = ImGui::GetCursorScreenPos();
+                cursor.y -= ImGui::GetFrameHeight() + padding * 2;
+                ImGui::SetCursorScreenPos(cursor);
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
                 ImGui::BeginChild("slider", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
@@ -435,13 +444,15 @@ namespace ui {
             ImGui::PopStyleVar();
         }
     };
-    
 }
 
 /*
+* 
+*   Bugs:  
+        player with init paused shows black screen
+    
     Todo:
-        bug:  player with init paused shows black screen
-
+        
         open file dialog - select file
         draw points on video
         select between modes:
@@ -515,11 +526,12 @@ int main(int argc, char* argv[]) {
   
     FpsCounter fps;
     ui::FrameView frameView("frame_1");
+    frameView.position = ImVec2(50, 50);
+    frameView.size = ImVec2(400, 500);
 
     while (!glfwWindowShouldClose(window)) {
 
         auto now = steady_clock::now();
-
         if (player.hasUpdate(now)) {
             const RGBFrame* rgb = player.currentFrame();
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
@@ -529,67 +541,17 @@ int main(int argc, char* argv[]) {
         }
 
         ui::start();
-        frameView.draw(ImVec2(50, 50), ImVec2(400, 500));
-        if (frameView.slider.changed) {
+        frameView.draw(player.ps.progress);
+        if (frameView.slider.changedByUser) {
             player.seekProgress(frameView.slider.progress);
         }
-        const auto& vp = frameView.viewPort;
-        render.frames[0].viewPort = { vp.x, vp.y };
-        render.frames[0].viewSize = { vp.w, vp.h };
-
-
-        //ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
-        //ui::createFrameWindow("frame_2", ImVec2(500, 200), ImVec2(200, 200));
+        if (frameView.viewPort.changed) {
+            const auto [left, top] = frameView.viewPort.cursor;
+            const auto [width, height] = frameView.viewPort.region;
+            const auto screenHeight = ImGui::GetMainViewport()->WorkSize.y;
+            render.reshapeFrame(0, left, top, width, height, screenHeight);
+        }
         
-        //ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
-        //const ImGuiStyle& style = ImGui::GetStyle();
-        //{
-
-        //    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-        //    //ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
-
-        //    int height = ImGui::GetFrameHeight() + style.WindowPadding.y * 2;
-
-        //    ImGui::SetNextWindowPos(ImVec2(0, workSize.y - height), ImGuiCond_Always);
-        //    ImGui::SetNextWindowSize(ImVec2(workSize.x, height), ImGuiCond_Always);
-        //    ImGui::Begin("SlidersWindow", nullptr,
-        //        //ImGuiWindowFlags_NoBackground |
-        //        ImGuiWindowFlags_NoDecoration |
-        //        ImGuiWindowFlags_NoNav
-        //    );
-
-        //    float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
-        //    ImGui::PushItemWidth(itemWidth);
-        //    {
-        //        // todo: use static progress here instead of ps.progress?
-        //        // update ps.progress inside the slider.update(...)?
-        //        ImGui::PushID(0);
-        //        PlayState& ps = player.ps;
-        //        bool changed = ImGui::SliderFloat("", &ps.progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
-        //        bool active = ImGui::IsItemActive();
-        //        bool hasSeek = slider.hasManualSeek(now, ps, changed, active);
-        //        if (hasSeek) {
-        //            player.seekProgress(ps.progress);
-        //        }
-        //        ImGui::PopID();
-        //    }
-        //    {
-        //        ImGui::PushID(1);
-        //        ImGui::SameLine(0.f, style.WindowPadding.x);
-        //        static float progress = 0.f;
-        //        bool changed = ImGui::SliderFloat("", &progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
-        //        bool active = ImGui::IsItemActive();
-        //        //todo: update another slider for another video stream
-        //        //slider.update(changed, active, ps.progress);
-        //        ImGui::PopID();
-        //    }
-        //    ImGui::PopItemWidth();
-        //    ImGui::End();
-        //    ImGui::PopStyleVar(1);
-        //}
-
-
-
         //ImGui::ShowDemoWindow();
         //ImGui::DebugTextEncoding("Привет");
         //ImGui::ShowMetricsWindow();
