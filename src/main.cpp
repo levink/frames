@@ -118,7 +118,7 @@ struct PlayController {
     void pause(bool paused) {
         if (paused) {
             ps.paused = true;
-            ps.update = false;
+            ps.update = true;
             frameQ.print();
         }
         else {
@@ -447,12 +447,7 @@ namespace ui {
 }
 
 /*
-* 
-*   Bugs:  
-        player with init paused shows black screen
-    
     Todo:
-        
         open file dialog - select file
         draw points on video
         select between modes:

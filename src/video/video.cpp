@@ -581,7 +581,7 @@ bool FrameQueue::tooFarFromBegin() const {
     return selected > deltaMin;
 }
 bool FrameQueue::tooFarFromEnd() const {
-    return selected + deltaMin + 1 < static_cast<int64_t>(items.size());
+    return selected + deltaMin + 1 < items.size();
 }
 void FrameQueue::tryFillBack(FrameLoader& loader) {
     if (tooFarFromEnd()) {
@@ -600,7 +600,7 @@ void FrameQueue::tryFillBack(FrameLoader& loader) {
     auto prev = items.pushBack(frame);
     if (prev) {
         loader.putFrame(prev);
-        if (selected >= 0) {
+        if (selected > 0) {
             selected--;
         }
     }

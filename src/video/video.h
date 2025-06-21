@@ -113,11 +113,11 @@ public:
 };
 
 struct FrameQueue {
-    static constexpr int64_t capacity = 5;
-    static constexpr int64_t deltaMin = 1;
+    static constexpr size_t capacity = 5;
+    static constexpr size_t deltaMin = 1;
 
     CircleBuffer<RGBFrame*, capacity, nullptr> items;
-    int64_t selected = -1;
+    size_t selected = 0;
     int8_t loadDir = 1;
 
     const RGBFrame* curr();
