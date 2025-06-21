@@ -18,66 +18,17 @@ using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 using std::chrono::duration_cast;
 
-struct Scene {
-    /* Styles */
-    int windowPadding = 4;
-
-    /* Sizes depends on ImGui::Style only */
-    int sliderHeight = 0;
-
-    /* Main window */
+struct Settings {
     int windowWidth = 0;
     int windowHeight = 0;
 };
 
 struct PlayState {
-    bool paused = false;
+    bool paused = false;    
     bool update = false;    // when paused or manual seek
     float progress = 0.f;   // [0; 100]
     int64_t framePts = 0;   // last seen frame pts 
     int64_t frameDur = 0;   // last seen frame duration
-};
-
-
-struct SlideDetector {
-    steady_clock::time_point last;
-    bool move = false;
-    bool hold = false;
-    bool paused = false;
-
-    // Detects manual seeking: when user is changing the UI-slider by hands
-    bool hasManualSeek(const steady_clock::time_point& now, PlayState& ps, bool changed, bool active) {
-        if (!hold && active) {
-            hold = true;
-            paused = ps.paused;
-            ps.paused = true;
-        }
-        else if (hold && !active) {
-            hold = false;
-            ps.paused = paused;
-        }
-
-        auto dt = duration_cast<milliseconds>(now - last).count();
-        if (changed && !move) {
-            move = true;
-            last = now;
-            //std::cout << "Slider: move start" << std::endl;
-            return true;
-        }
-        if (changed && move && dt > 25) {
-            last = now; 
-            //std::cout << "Slider: keep moving " << std::endl;
-            return true;
-        }
-        if (!changed && move && dt > 50) {
-            move = false;
-            last = now;
-            //std::cout << "Slider: move stop" << std::endl;
-            return true;
-        }
-
-        return false;
-    }
 };
 
 struct PlayController {
@@ -114,7 +65,7 @@ struct PlayController {
     }
     
     void seekProgress(float progress) {
-        auto pts = info.progressToPts(ps.progress);
+        auto pts = info.progressToPts(progress);
         seekPts(pts);
     }
 
@@ -161,10 +112,10 @@ struct PlayController {
     }
 
     void togglePause() {
-        setPause(!ps.paused);
+        pause(!ps.paused);
     }
 
-    void setPause(bool paused) {
+    void pause(bool paused) {
         if (paused) {
             ps.paused = true;
             ps.update = false;
@@ -224,21 +175,17 @@ struct PlayController {
     }
 };
 
-
-Scene scene;
 Render render;
+Settings settings;
 PlayController player(render);
-
 
 static void reshape(int w, int h) {
     
-    //cout << "reshape w=" << w << " h=" << h << endl;
+    settings.windowWidth = w;
+    settings.windowHeight = h;
 
-    scene.windowWidth = w;
-    scene.windowHeight = h;
-
-    const int frameWidth = scene.windowWidth / 2;
-    const int frameHeight = scene.windowHeight - scene.sliderHeight;
+    const int frameWidth = w / 2;
+    const int frameHeight = h;
 
     {
         int left = 0;
@@ -246,7 +193,7 @@ static void reshape(int w, int h) {
         int right = left + frameWidth;
         int bottom = top + frameHeight;
         render.frames[0].leftTop = { left, top };
-        render.frames[0].viewPort = { left, scene.windowHeight - bottom };
+        render.frames[0].viewPort = { left, frameHeight - bottom };
         render.frames[0].viewSize = { right - left, bottom - top };
         render.frames[0].cam.reshape(right - left, bottom - top);
     }
@@ -257,7 +204,7 @@ static void reshape(int w, int h) {
         int right = left + frameWidth;
         int bottom = top + frameHeight;
         render.frames[1].leftTop = { left, top };
-        render.frames[1].viewPort = { left, scene.windowHeight - bottom };
+        render.frames[1].viewPort = { left, frameHeight - bottom };
         render.frames[1].viewSize = { right - left, bottom - top };
         render.frames[1].cam.reshape(right - left, bottom - top);
     }
@@ -291,11 +238,11 @@ static void mouseCallback(ui::mouse::MouseEvent event) {
 
     if (event.is(Action::MOVE, Button::LEFT)) {
         auto delta = event.getDelta();
-        render.move(delta.x, delta.y);
+        //render.move(delta.x, delta.y);
     }
     else if (event.is(Action::MOVE, Button::NO)) {
         auto cursor = event.getCursor();
-        render.select(cursor);
+        //render.select(cursor);
     }
 }
 static void mouseClick(GLFWwindow*, int button, int action, int mods) {
@@ -314,10 +261,10 @@ static void mouseMove(GLFWwindow* w, double x, double y) {
         return;
     }
 
-    auto mx = static_cast<int>(x);
+  /*  auto mx = static_cast<int>(x);
     auto my = static_cast<int>(y);
     auto event = ui::mouse::move(mx, my);
-    mouseCallback(event);
+    mouseCallback(event);*/
 }
 static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
     const ImGuiIO& io = ImGui::GetIO();
@@ -325,7 +272,7 @@ static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
         return;
     }
 
-    render.zoom(yoffset);
+    //render.zoom(yoffset);
 }
 static bool loadGLES(GLFWwindow* window) {
     glfwMakeContextCurrent(window);
@@ -352,36 +299,149 @@ static void initWindow(GLFWwindow* window) {
 static void initImGui(GLFWwindow* window) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
     ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
     ImGui_ImplOpenGL3_Init();
 
-    //Default style
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(scene.windowPadding, scene.windowPadding));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-
-    // Pre-render step, for creating fonts & styles
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-    //Update scene sizes depends on styles
-    const ImGuiStyle& style = ImGui::GetStyle();
-    scene.sliderHeight = ImGui::GetFontSize() + style.FramePadding.y * 2 + style.WindowPadding.y * 2;
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromFileTTF("../../data/fonts/calibri.ttf", 14);
+    io.Fonts->Build();   
 }
 static void destroyImGui() {
-    ImGui::PopStyleVar(2);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
 
+namespace ui {
+    static void start() {
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+    }
+    static void draw() {
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }   
+
+    struct Slider {
+        float progress = 0;
+        bool changed = false;
+    private:
+        bool hold = false;
+        float progressLast = 0;
+        steady_clock::time_point lastUpdate;
+    public:
+        void update(bool active) {
+            changed = false;
+
+            if (!hold && active) {
+                hold = true;
+                changed = valueChanged(steady_clock::now());
+                return;
+            }
+            if (hold && !active) {
+                hold = false;
+                changed = valueChanged(steady_clock::now());
+                return;
+            }
+            if (hold) {
+                auto now = steady_clock::now();
+                auto delta = duration_cast<milliseconds>(now - lastUpdate).count();
+                if (delta > 250) {
+                    changed = valueChanged(now);
+                }
+            }
+        }
+
+    private:
+        bool valueChanged(const steady_clock::time_point& time) {
+            if (progressLast != progress) {
+                progressLast = progress;
+                lastUpdate = time;
+                return true;
+            }
+            return false;
+        }
+    };
+
+    struct Viewport {
+        int x = 0;
+        int y = 0;
+        int w = 0;
+        int h = 0;
+    };
+
+    struct FrameView {
+        const char* name;
+        Viewport viewPort;
+        Slider slider;
+        
+        explicit FrameView(const char* name) : name(name) { }
+        void draw(const ImVec2& position, const ImVec2& size) {
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::SetNextWindowPos(position, ImGuiCond_Appearing);
+            ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
+
+            constexpr int padding = 8;
+            ImGuiWindowFlags flags =
+                ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoBackground;
+            ImGui::Begin(name, nullptr, flags);
+
+            ImGui::IsWindowCollapsed();
+
+            //frame
+            {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+                ImGui::BeginChild("frame", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - padding * 2));
+                ImVec2 view_p0 = ImGui::GetCursorScreenPos();
+                ImVec2 view_sz = ImGui::GetContentRegionAvail();
+                const int offsetFromWindowLeft = view_p0.x;
+                const int offsetFromWindowBottom = ImGui::GetMainViewport()->WorkSize.y - (view_p0.y + view_sz.y);
+                viewPort.x = offsetFromWindowLeft;
+                viewPort.y = offsetFromWindowBottom;
+                viewPort.w = view_sz.x;
+                viewPort.h = view_sz.y;
+
+                const ImVec2 size = ImGui::GetContentRegionAvail();
+                ImGui::InvisibleButton("test", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+                /*const bool button_hovered = ImGui::IsItemHovered();
+                const bool button_active = ImGui::IsItemActive();
+                if (button_hovered) {
+                    ImGuiIO& io = ImGui::GetIO();
+                    auto screen = io.MousePos;
+                    auto local = ImVec2(screen.x - view_p0.x, screen.y - view_p0.y);
+                    //cout << "io x = " << local.x<< " y=" << local.y<< std::endl;
+                }*/
+                ImGui::EndChild();
+                ImGui::PopStyleVar();
+            }
+
+            //slider
+            {
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+                ImGui::BeginChild("slider", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+                ImGui::SliderFloat("##slider", &slider.progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
+                slider.update(ImGui::IsItemActive());
+                ImGui::PopItemWidth();
+                ImGui::EndChild();
+                ImGui::PopStyleVar();
+            }
+
+            ImGui::End();
+            ImGui::PopStyleVar();
+        }
+    };
+    
+}
 
 /*
     Todo:
+        bug:  player with init paused shows black screen
+
         open file dialog - select file
         draw points on video
         select between modes:
@@ -391,7 +451,6 @@ static void destroyImGui() {
 */
 //#include <Windows.h>
 //#include <filesystem>
-
 int main(int argc, char* argv[]) {
 
     //{
@@ -450,88 +509,95 @@ int main(int argc, char* argv[]) {
 
     auto now = steady_clock::now();
     player.start(now);
+    player.pause(true); //todo: bug here. Shows black screen.
     render.createFrame(0, player.info.width, player.info.height);
     render.createFrame(1, player.info.width, player.info.height);
   
     FpsCounter fps;
-    SlideDetector slider;
+    ui::FrameView frameView("frame_1");
 
     while (!glfwWindowShouldClose(window)) {
 
         auto now = steady_clock::now();
+
         if (player.hasUpdate(now)) {
             const RGBFrame* rgb = player.currentFrame();
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
             render.updateFrame(1, rgb->width, rgb->height, rgb->pixels);
-            fps.print();
+            //player.frameQ.print();
+            //fps.print();
         }
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        const auto* viewPort = ImGui::GetMainViewport();
-        const auto& workSize = viewPort->WorkSize;
-
-        {
-            ImGui::SetNextWindowPos(ImVec2(0, workSize.y - scene.sliderHeight), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(workSize.x, scene.sliderHeight), ImGuiCond_Always);
-            ImGui::Begin("SlidersWindow", nullptr,
-                ImGuiWindowFlags_NoBackground |
-                ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_NoNavInputs |
-                ImGuiWindowFlags_NoNavFocus);
-
-            const auto& style = ImGui::GetStyle();
-            float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
-            ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
-            ImGui::PushItemWidth(itemWidth);
-            {
-                // todo: use static progress here instead of ps.progress?
-                // update ps.progress inside the slider.update(...)?
-                ImGui::PushID(0);
-                PlayState& ps = player.ps;
-                bool changed = ImGui::SliderFloat("", &ps.progress, 0.0f, 100.0f, "", flags);
-                bool active = ImGui::IsItemActive();
-                bool hasSeek = slider.hasManualSeek(now, ps, changed, active);
-                if (hasSeek) {
-                    player.seekProgress(ps.progress);
-                }
-                ImGui::PopID();
-            }
-            {
-                ImGui::PushID(1);
-                ImGui::SameLine(0.f, style.WindowPadding.x);
-                static float progress = 0.f;
-                bool changed = ImGui::SliderFloat("", &progress, 0.0f, 100.0f, "", flags);
-                bool active = ImGui::IsItemActive();
-                //todo: update another slider for another video stream
-                //slider.update(changed, active, ps.progress);
-                ImGui::PopID();
-            }
-            ImGui::PopItemWidth();
-            ImGui::End();
+        ui::start();
+        frameView.draw(ImVec2(50, 50), ImVec2(400, 500));
+        if (frameView.slider.changed) {
+            player.seekProgress(frameView.slider.progress);
         }
+        const auto& vp = frameView.viewPort;
+        render.frames[0].viewPort = { vp.x, vp.y };
+        render.frames[0].viewSize = { vp.w, vp.h };
+
+
+        //ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
+        //ui::createFrameWindow("frame_2", ImVec2(500, 200), ImVec2(200, 200));
         
-        {
-            static bool opened = true;
-            ImGui::SetNextWindowSize(ImVec2(500, 200), ImGuiCond_FirstUseEver);
-            ImGui::Begin("FolderWindow", &opened, ImGuiWindowFlags_None);
-            ImGui::Text("MyObject1");
-            ImGui::Text("MyObject2");
-            ImGui::Text("MyObject3");
-            ImGui::Text("MyObject4");
-            ImGui::Text("MyObject5");
-            ImGui::End();
+        //ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
+        //const ImGuiStyle& style = ImGui::GetStyle();
+        //{
 
-           
-        }        
+        //    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+        //    //ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
 
-        ImGui::DebugTextEncoding("Привет");
+        //    int height = ImGui::GetFrameHeight() + style.WindowPadding.y * 2;
 
+        //    ImGui::SetNextWindowPos(ImVec2(0, workSize.y - height), ImGuiCond_Always);
+        //    ImGui::SetNextWindowSize(ImVec2(workSize.x, height), ImGuiCond_Always);
+        //    ImGui::Begin("SlidersWindow", nullptr,
+        //        //ImGuiWindowFlags_NoBackground |
+        //        ImGuiWindowFlags_NoDecoration |
+        //        ImGuiWindowFlags_NoNav
+        //    );
+
+        //    float itemWidth = 0.5 * (workSize.x - 3 * style.WindowPadding.x);
+        //    ImGui::PushItemWidth(itemWidth);
+        //    {
+        //        // todo: use static progress here instead of ps.progress?
+        //        // update ps.progress inside the slider.update(...)?
+        //        ImGui::PushID(0);
+        //        PlayState& ps = player.ps;
+        //        bool changed = ImGui::SliderFloat("", &ps.progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
+        //        bool active = ImGui::IsItemActive();
+        //        bool hasSeek = slider.hasManualSeek(now, ps, changed, active);
+        //        if (hasSeek) {
+        //            player.seekProgress(ps.progress);
+        //        }
+        //        ImGui::PopID();
+        //    }
+        //    {
+        //        ImGui::PushID(1);
+        //        ImGui::SameLine(0.f, style.WindowPadding.x);
+        //        static float progress = 0.f;
+        //        bool changed = ImGui::SliderFloat("", &progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
+        //        bool active = ImGui::IsItemActive();
+        //        //todo: update another slider for another video stream
+        //        //slider.update(changed, active, ps.progress);
+        //        ImGui::PopID();
+        //    }
+        //    ImGui::PopItemWidth();
+        //    ImGui::End();
+        //    ImGui::PopStyleVar(1);
+        //}
+
+
+
+        //ImGui::ShowDemoWindow();
+        //ImGui::DebugTextEncoding("Привет");
+        //ImGui::ShowMetricsWindow();
+        
+        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
         render.draw();
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        ui::draw();
 
         glFlush();
         glfwSwapBuffers(window);

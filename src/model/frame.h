@@ -7,7 +7,7 @@
 
 struct FrameView {
     glm::ivec2 leftTop;  // Coordinates of left-top view's corner in a window space
-    glm::ivec2 viewPort; // Viewport offset from bottom left corner of main window
+    glm::ivec2 viewPort; // Offset from bottom left corner of main window for using in glViewport(...)
     glm::ivec2 viewSize; // View size in pixels in a window space
     
 	Camera cam;
