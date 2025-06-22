@@ -5,7 +5,7 @@
 template<size_t capacity>
 struct IntBuffer : CircleBuffer<int, capacity, 0> { };
 
-TEST(HelloTest, CircleBuffer_accessByIndex) {	
+TEST(CircleBufferTest, AccessByIndex) {
 	IntBuffer<3> buf;
 	ASSERT_FALSE(buf.full());
 
@@ -31,7 +31,7 @@ TEST(HelloTest, CircleBuffer_accessByIndex) {
 	ASSERT_EQ(5, buf[2]);
 }
 
-TEST(HelloTest, CircleBuffer_accessByFunc) {
+TEST(CircleBufferTest, AccessByFunc) {
 	IntBuffer<3> buf;
 
 	buf.pushBack(1);
@@ -51,7 +51,7 @@ TEST(HelloTest, CircleBuffer_accessByFunc) {
 	ASSERT_EQ(6, buf.back());
 }
 
-TEST(HelloTest, CircleBuffer_pushBack) {
+TEST(CircleBufferTest, PushBack) {
 	IntBuffer<3> buf;
 	int prev = buf.pushBack(1);
 	ASSERT_FALSE(buf.full());
@@ -99,7 +99,7 @@ TEST(HelloTest, CircleBuffer_pushBack) {
 	ASSERT_EQ(6, buf[2]);
 }
 
-TEST(HelloTest, CircleBuffer_pushFront) {
+TEST(CircleBufferTest, PushFront) {
 	IntBuffer<3> buf;
 	int prev = buf.pushFront(1);
 	ASSERT_FALSE(buf.full());
@@ -147,7 +147,7 @@ TEST(HelloTest, CircleBuffer_pushFront) {
 	ASSERT_EQ(3, prev);
 }
 
-TEST(HelloTest, CircleBuffer_pushTwoSides) {
+TEST(CircleBufferTest, PushTwoSides) {
 	IntBuffer<3> buf;
 
 	int prev = buf.pushBack(1); // [1] -> 0
@@ -196,7 +196,7 @@ TEST(HelloTest, CircleBuffer_pushTwoSides) {
 	ASSERT_EQ(7, prev);
 }
 
-TEST(HelloTest, CircleBuffer_popBack) {
+TEST(CircleBufferTest, PopBack) {
 	IntBuffer<3> buf;
 	ASSERT_TRUE(buf.empty());
 
@@ -234,7 +234,7 @@ TEST(HelloTest, CircleBuffer_popBack) {
 	ASSERT_EQ(0, prev);
 }
 
-TEST(HelloTest, CircleBuffer_popFront) {
+TEST(CircleBufferTest, PopFront) {
 	IntBuffer<3> buf;
 	ASSERT_TRUE(buf.empty());
 
@@ -258,7 +258,7 @@ TEST(HelloTest, CircleBuffer_popFront) {
 	ASSERT_EQ(0, buf.popFront());
 }
 
-TEST(HelloTest, CircleBuffer_iterator) {
+TEST(CircleBufferTest, Iterator) {
 	IntBuffer<3> buf;
 	ASSERT_TRUE(buf.empty());
 	buf.pushBack(1);

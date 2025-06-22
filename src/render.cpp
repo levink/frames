@@ -1,11 +1,6 @@
 #include "render.h"
 #include <iostream>
 
-static void reloadShader(const char* path, ShaderSource& cache, Shader& shader) {
-	cache.load(path);
-	shader.destroy();
-	shader.create(cache);
-}
 static GLuint createTexture(int16_t width, int16_t height) {
 	GLuint videoTextureId = 0;
 	glGenTextures(1, &videoTextureId);
@@ -43,14 +38,18 @@ static void updateTexture(GLuint textureId, int16_t width, int16_t height, uint8
 }
 
 void Render::loadShaders() {
-	shaders.videoSource.load(shader_path::video);
-	shaders.videoShader.create(shaders.videoSource);
+	ShaderSource source;
+	source.load(shader_path::video);
+	videoShader.create(source);
 }
 void Render::reloadShaders() {
-	reloadShader(shader_path::video, shaders.videoSource, shaders.videoShader);
+	ShaderSource source;
+	source.load(shader_path::video);
+	videoShader.destroy();
+	videoShader.create(source);
 }
 void Render::destroyShaders() {
-	shaders.videoShader.destroy();
+	videoShader.destroy();
 }
 void Render::createFrame(size_t frameIndex, int16_t width, int16_t height) {
 	auto& frame = frames[frameIndex];
@@ -71,10 +70,10 @@ void Render::destroyFrames() {
 	}
 }
 void Render::draw() {
-	shaders.videoShader.enable();
-	shaders.videoShader.draw(frames[0]);
-	//shaders.videoShader.draw(frames[1]);
-	shaders.videoShader.disable();
+	videoShader.enable();
+	videoShader.draw(frames[0]);
+	//videoShader.draw(frames[1]);
+	videoShader.disable();
 }
 void Render::move(int dx, int dy) {
 	if (selected > -1) {

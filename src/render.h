@@ -2,14 +2,8 @@
 #include "model/frame.h"
 #include "shader/shader.h"
 
-struct Shaders {
-	//todo: really need split on source + shader?
-	ShaderSource videoSource;
-	VideoShader videoShader;
-};
-
 struct Render {
-	Shaders shaders;
+	VideoShader videoShader;
 	Frame frames[2];
 	int selected = -1;
 

@@ -44,7 +44,7 @@ file(COPY ${FFMPEG_DLL_PATH} DESTINATION ${CMAKE_BINARY_DIR})
 
 
 add_executable(tests
-	tests/hello.cpp
+	tests/CircleBufferTest.cpp
 )
 target_include_directories(tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(tests PRIVATE ${gtest_SOURCE_DIR}/include)

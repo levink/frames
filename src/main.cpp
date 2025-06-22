@@ -3,7 +3,7 @@
 #include <iostream>
 #include <chrono>
 #include <functional>
-#include "image/lodepng.h"
+#include <filesystem>
 #include "ui/ui.h"
 #include "util/fpscounter.h"
 #include "video/video.h"
@@ -12,6 +12,7 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
+namespace fs = std::filesystem;
 using std::cout;
 using std::endl;
 using std::chrono::microseconds;
@@ -19,6 +20,9 @@ using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 using std::chrono::duration_cast;
 using std::function;
+using std::list;
+using std::string;
+
 
 struct PlayState {
     bool paused = false;    
@@ -50,10 +54,10 @@ struct PlayController {
         return false;
     }
     
-    void start(const steady_clock::time_point& now) {
+    void start() {
         loader.createFrames(10, info.width, info.height);
         loader.start();
-        lastUpdate = now;
+        lastUpdate = steady_clock::now();
     }
 
     void stop() {
@@ -164,7 +168,6 @@ struct PlayController {
         }
 
         return false;
-
     }
 
     const RGBFrame* currentFrame() {
@@ -269,11 +272,39 @@ namespace ui {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }   
 
+    static void showDebug() {
+        ImGui::ShowDemoWindow();
+        //ImGui::DebugTextEncoding("Привет");
+        //ImGui::ShowMetricsWindow();
+    }
+
+    static void showMainMenuBar() {
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+              /*  ShowExampleMenuFile();*/
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Edit"))
+            {
+                if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
+                if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {} // Disabled item
+                ImGui::Separator();
+                if (ImGui::MenuItem("Cut", "CTRL+X")) {}
+                if (ImGui::MenuItem("Copy", "CTRL+C")) {}
+                if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+    }
+  
     struct Slider {
         float progress = 0;
     private:
         bool hold = false;
-        float progressLast = 0;
+        float lastProgress = 0;
         steady_clock::time_point lastUpdate;
     public:
         bool update(bool active) {
@@ -296,8 +327,8 @@ namespace ui {
         }
     private:
         bool valueChanged(const steady_clock::time_point& time) {
-            if (progressLast != progress) {
-                progressLast = progress;
+            if (lastProgress != progress) {
+                lastProgress = progress;
                 lastUpdate = time;
                 return true;
             }
@@ -326,31 +357,117 @@ namespace ui {
         }
     };
 
-    struct FrameView {
+    struct ExplorerWindow {
+        
+        struct Node {
+            bool folder = false;
+            bool loaded = false;
+            fs::path path;
+            string name;
+            list<Node> childreen;
+        };
+
+        Node root;
+        void open(const fs::path& path) {
+           
+            //auto path = fs::path("C:\\Users\\Konst\\Desktop"); //or fs::current_path();
+          /*  std::cout << "exists() = " << fs::exists(path) << "\n"
+                << "relative_path() = " << path.relative_path() << "\n"
+                << "parent_path() = " << path.parent_path() << "\n"
+                << "filename() = " << path.filename() << "\n"
+                << "stem() = " << path.stem() << "\n"
+                << "extension() = " << path.extension() << "\n"
+                << "isDirectory = "<< fs::is_directory(path) << "\n";
+            */
+
+            if (fs::is_directory(path)) {
+                root.folder = true;
+                root.loaded = true;
+                root.path = path;
+                root.name = path.string(); //todo: convert to utf8 string
+                loadFolder(path, root.childreen);
+            }
+            else {
+                root.folder = false;
+                root.loaded = true;
+                root.path = path;
+                root.name = path.string(); //todo: convert to utf8 string
+            }
+        }
+        void show() {
+            ImGui::Begin("child2");
+            ImGui::Text("Hello!");
+            showFolder(root, true);
+            ImGui::End();
+        }
+    
+    private:
+        void loadFolder(const fs::path& path, list<Node>& result) {
+            for (const auto& child : fs::directory_iterator(path)) {
+                auto& childPath = child.path();
+                auto fileNameUTF8Str = childPath.filename().u8string();
+                auto fileNameUTF8Bytes = string(fileNameUTF8Str.begin(), fileNameUTF8Str.end());
+                bool folder = fs::is_directory(childPath);
+                bool loaded = false;
+                result.emplace_back(Node{ folder, loaded, childPath, std::move(fileNameUTF8Bytes) });
+            }
+            std::stable_sort(result.begin(), result.end(), [](const Node& left, const Node& right) {
+                // Folders - on the top
+                // Files - on the bottom 
+                return left.folder > right.folder; 
+            });
+        }
+        void showFolder(Node& node, bool opened) {
+            ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesFull;
+            if (opened) {
+                base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
+
+            if (ImGui::TreeNodeEx(node.name.c_str(), base_flags)) {
+                if (!node.loaded) {
+                    node.loaded = true;
+                    loadFolder(node.path, node.childreen);
+                }
+                for (size_t index = 0; auto& child : node.childreen) {
+                    if (child.folder) {
+                        showFolder(child, false);
+                    }
+                    else {
+                        ImGui::Selectable(child.name.c_str());
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+    };
+
+    struct FrameWindow {
         const char* name;
         ImVec2 position;
         ImVec2 size;
+        bool opened = true;
         Viewport viewPort;
         Slider slider;
         function<void(int, int)> mouseFn;
         function<void(float)> slideFn;
         function<void(const Viewport&)> reshapeFn;
 
-        explicit FrameView(const char* name) : name(name) { }
+        explicit FrameWindow(const char* name) : name(name) { }
         void setProgress(float progress) {
             slider.progress = progress;
         }
-        void draw() {
+        void show() {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-            ImGui::SetNextWindowPos(position, ImGuiCond_Appearing);
-            ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
+            ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
 
             constexpr int padding = 8;
             ImGuiWindowFlags flags =
                 //ImGuiWindowFlags_NoTitleBar |
                 //ImGuiWindowFlags_NoInputs |
+                ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoBackground;
-            ImGui::Begin(name, nullptr, flags);
+            ImGui::Begin(name, &opened, flags);
 
             //frame
             {
@@ -358,7 +475,7 @@ namespace ui {
                 ImGui::BeginChild("frame");
                 auto cursor = ImGui::GetCursorScreenPos();
                 auto region = ImGui::GetContentRegionAvail();
-                auto screen = ImGui::GetMainViewport()->WorkSize;
+                auto screen = ImGui::GetMainViewport()->Size;
                 bool changed = viewPort.update(cursor, region, screen);
                 if (changed && reshapeFn) {
                     reshapeFn(viewPort);
@@ -409,42 +526,15 @@ namespace ui {
             2. draw on video
             3. playing/steps (?)
 */
-//#include <Windows.h>
-//#include <filesystem>
-int main(int argc, char* argv[]) {
 
-    //{
-    //    using std::cout;
-    //    using std::endl;
-    //    namespace fs = std::filesystem;
-    //    auto path = fs::path("C:\\Users\\Konst\\Desktop");//fs::current_path();
-    //    std::cout << "exists() = " << fs::exists(path) << "\n"
-    //        //<< "root_name() = " << path.root_name() << "\n"
-    //        //<< "root_path() = " << path.root_path() << "\n"
-    //        << "relative_path() = " << path.relative_path() << "\n"
-    //        << "parent_path() = " << path.parent_path() << "\n"
-    //        << "filename() = " << path.filename() << "\n"
-    //        << "stem() = " << path.stem() << "\n"
-    //        << "extension() = " << path.extension() << "\n"
-    //        << "isDirectory = "<< fs::is_directory(path) << "\n";
-    //    setlocale(LC_ALL, "Russian");
-    //    SetConsoleOutputCP(1251);
-    //    SetConsoleCP(1251);
-    //    for (const auto& dir : fs::directory_iterator(path)) {
-    //        const auto& localPath = dir.path();
-    //        auto fileName = localPath.filename().wstring();
-    //        std::wcout << fileName << endl;
-    //    }
-    //    return 0;
-    //}
-    
+int main(int argc, char* argv[]) {
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
         return -1;
     }
 
-    int windowWidth = 1000;
-    int windowHeight = 600;
+    int windowWidth = 1500;
+    int windowHeight = 900;
     GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Frames", nullptr, nullptr);
     if (!window) {
         std::cout << "glfwCreateWindow error" << std::endl;
@@ -465,49 +555,51 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    auto now = steady_clock::now();
-    player.start(now);
+    player.start();
     player.pause(true);
     render.createFrame(0, player.info.width, player.info.height);
     //render.createFrame(1, player.info.width, player.info.height);
   
     FpsCounter fps;
-    ui::FrameView frameView("frame_1");
-    frameView.position = ImVec2(50, 50);
-    frameView.size = ImVec2(400, 500);
-    frameView.mouseFn = [](int mx, int my) {
+    ui::FrameWindow frameWindow("frame_1");
+    frameWindow.position = ImVec2(50, 50);
+    frameWindow.size = ImVec2(400, 500);
+    frameWindow.mouseFn = [](int mx, int my) {
         mouseCallback(render.frames[0], mx, my);
     };
-    frameView.slideFn = [](float progress) {
+    frameWindow.slideFn = [](float progress) {
         player.seekProgress(progress);
     };
-    frameView.reshapeFn = [](const ui::Viewport& vp) {
+    frameWindow.reshapeFn = [](const ui::Viewport& vp) {
         const auto [left, top] = vp.cursor;
         const auto [width, height] = vp.region;
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
 
+    ui::ExplorerWindow explorer;
+    explorer.open(fs::path("C:\\Users\\Konst\\Desktop"));
+
     while (!glfwWindowShouldClose(window)) {
 
         auto now = steady_clock::now();
-        if (player.hasUpdate(now)) {
+        if (player.hasUpdate(now)) { 
+            //todo: pause player when user holds slider
             const RGBFrame* rgb = player.currentFrame();
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
-            frameView.setProgress(player.ps.progress);
+            frameWindow.setProgress(player.ps.progress);
             //player.frameQ.print();
             //fps.print();
         }
 
-        ui::start();
-        frameView.draw();
-
-        //ImGui::ShowDemoWindow();
-        //ImGui::DebugTextEncoding("Привет");
-        //ImGui::ShowMetricsWindow();
-        
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        render.draw();
+        render.draw(); //todo: perfect would be render frames to textures and use them all in the imgui side
+
+        ui::start();
+        ui::showMainMenuBar();
+        explorer.show();
+        frameWindow.show();
+        ui::showDebug();
         ui::render();
 
         glFlush();
