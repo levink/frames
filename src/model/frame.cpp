@@ -1,31 +1,22 @@
 #include "frame.h"
 
 void Frame::reshape(int left, int top, int width, int height, int screenHeight) {
-    leftTop = { left, top };
     viewPort = { left, screenHeight - (top + height) };
     viewSize = { width, height };
     cam.reshape(width, height);
 }
-
-bool Frame::hit(int x, int y) const {
-    if (x < leftTop.x || leftTop.x + viewSize.x < x) {
-        return false;
-    }
-    if (y < leftTop.y || leftTop.y + viewSize.y < y) {
-        return false;
-    }
-    return true;
-}
-
 glm::vec2 Frame::toOpenGLSpace(const glm::ivec2& cursor) const {
+    
+    //todo: check code twice + check comments
+    //todo: refactor viewCoords
     /*
        Converting
-       from window space x = [0, windowWidth], y = [0, windowHeight]   - coordinates from top left corner of window(!)
-       to OpenGL space x = [-1, -1], y = [1, 1]                        - coordinates from bottom left corner of view(!)
+       from view space x = [0, windowWidth], y = [0, windowHeight]   - coordinates from top left corner of window(!)
+       to OpenGL space x = [-1, -1], y = [1, 1]                      - coordinates from bottom left corner of view(!)
     */
 
     // Coordinates from [0, 0] to [viewSize.x, viewSize.y] in window space
-    auto viewCoords = cursor - leftTop; 
+    auto viewCoords = cursor;// -leftTop; 
     
     // Coordinates from [-1, -1] to [1, 1] in OpenGL space
     auto result = glm::vec2(

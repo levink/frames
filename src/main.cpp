@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <chrono>
+#include <functional>
 #include "image/lodepng.h"
 #include "ui/ui.h"
 #include "util/fpscounter.h"
@@ -17,6 +18,7 @@ using std::chrono::microseconds;
 using std::chrono::milliseconds;
 using std::chrono::steady_clock;
 using std::chrono::duration_cast;
+using std::function;
 
 struct Settings {
     int windowWidth = 0;
@@ -180,40 +182,40 @@ Settings settings;
 PlayController player(render);
 
 static void reshape(int w, int h) {
-    
     settings.windowWidth = w;
     settings.windowHeight = h;
-
-    const int frameWidth = w / 2;
-    const int frameHeight = h;
-
-    {
-        int left = 0;
-        int top = 0;
-        int right = left + frameWidth;
-        int bottom = top + frameHeight;
-        render.frames[0].leftTop = { left, top };
-        render.frames[0].viewPort = { left, frameHeight - bottom };
-        render.frames[0].viewSize = { right - left, bottom - top };
-        render.frames[0].cam.reshape(right - left, bottom - top);
-    }
-    
-    {
-        int left = frameWidth;
-        int top = 0;
-        int right = left + frameWidth;
-        int bottom = top + frameHeight;
-        render.frames[1].leftTop = { left, top };
-        render.frames[1].viewPort = { left, frameHeight - bottom };
-        render.frames[1].viewSize = { right - left, bottom - top };
-        render.frames[1].cam.reshape(right - left, bottom - top);
-    }
 }
 static void reshapeWindow(GLFWwindow*, int w, int h) {
     reshape(w, h);
 }
+static void mouseCallback(Frame& frame, int mx, int my) {
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        int dx = io.MouseDelta.x;
+        int dy = io.MouseDelta.y;
+        if (dx || dy) {
+            frame.cam.move(dx, -dy);
+        }
+    }
+    if (io.MouseWheel) {
+        //cout << "scroll= " << io.MouseWheel << endl;
+        frame.cam.zoom(io.MouseWheel * 0.1f);
+    }
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        cout << "local x = " << mx << " local y=" << my << std::endl;
+    }
+}
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
+    
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureKeyboard) {
+        return;
+    }
+
     auto key = KeyEvent(keyCode, action, mods);
     if (key.is(ESC)) {
         glfwSetWindowShouldClose(window, GL_TRUE);
@@ -232,48 +234,6 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         player.seekRight();
     }
 }
-static void mouseCallback(ui::mouse::MouseEvent event) {
-    using namespace ui;
-    using namespace ui::mouse;
-
-    if (event.is(Action::MOVE, Button::LEFT)) {
-        auto delta = event.getDelta();
-        //render.move(delta.x, delta.y);
-    }
-    else if (event.is(Action::MOVE, Button::NO)) {
-        auto cursor = event.getCursor();
-        //render.select(cursor);
-    }
-}
-static void mouseClick(GLFWwindow*, int button, int action, int mods) {
-
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) {
-        return;
-    }
-
-    auto event = ui::mouse::click(button, action, mods);
-    mouseCallback(event);
-}
-static void mouseMove(GLFWwindow* w, double x, double y) {
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) {
-        return;
-    }
-
-  /*  auto mx = static_cast<int>(x);
-    auto my = static_cast<int>(y);
-    auto event = ui::mouse::move(mx, my);
-    mouseCallback(event);*/
-}
-static void mouseScroll(GLFWwindow* window, double xoffset, double yoffset) {
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) {
-        return;
-    }
-
-    //render.zoom(yoffset);
-}
 static bool loadGLES(GLFWwindow* window) {
     glfwMakeContextCurrent(window);
     if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
@@ -289,9 +249,6 @@ static void initWindow(GLFWwindow* window) {
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
     glfwSetFramebufferSizeCallback(window, reshapeWindow);
     glfwSetKeyCallback(window, keyCallback);
-    glfwSetMouseButtonCallback(window, mouseClick);
-    glfwSetCursorPosCallback(window, mouseMove);
-    glfwSetScrollCallback(window, mouseScroll);
     glfwSetWindowPos(window, 400, 200);
     glfwSwapInterval(1);
     glfwSetTime(0.0);
@@ -312,6 +269,7 @@ static void destroyImGui() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
+
 
 namespace ui {
     static void start() {
@@ -368,16 +326,20 @@ namespace ui {
     struct Viewport {
         ImVec2 cursor;
         ImVec2 region;
+        ImVec2 screen;
         bool changed = false;
-        void update(const ImVec2& cursor, const ImVec2& region) {
+        void update(const ImVec2& cursor, const ImVec2& region, const ImVec2& screen) {
             changed = 
                 this->cursor.x != cursor.x || 
                 this->cursor.y != cursor.y ||
                 this->region.x != region.x || 
-                this->region.y != region.y;
+                this->region.y != region.y ||
+                this->screen.x != screen.x ||
+                this->screen.y != screen.y;
             if (changed) {
                 this->cursor = cursor;
                 this->region = region;
+                this->screen = screen;
             }
         }
     };
@@ -388,12 +350,13 @@ namespace ui {
         ImVec2 size;
         Viewport viewPort;
         Slider slider;
-        
+        function<void(int, int)> mouseFn;
+
         explicit FrameView(const char* name) : name(name) { }
-        void draw(float progress) {
-
+        void setProgress(float progress) {
             slider.progress = progress;
-
+        }
+        void draw() {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::SetNextWindowPos(position, ImGuiCond_Appearing);
             ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
@@ -411,16 +374,16 @@ namespace ui {
                 ImGui::BeginChild("frame");
                 auto cursor = ImGui::GetCursorScreenPos();
                 auto region = ImGui::GetContentRegionAvail();
-                viewPort.update(cursor, region);
-                //ImGui::InvisibleButton("test", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-                /*const bool button_hovered = ImGui::IsItemHovered();
-                const bool button_active = ImGui::IsItemActive();
-                if (button_hovered) {
+                auto screen = ImGui::GetMainViewport()->WorkSize;
+                viewPort.update(cursor, region, screen);
+                
+                ImGui::InvisibleButton("full_size_area", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+                if (ImGui::IsItemHovered() && mouseFn) {
                     ImGuiIO& io = ImGui::GetIO();
-                    auto screen = io.MousePos;
-                    auto local = ImVec2(screen.x - view_p0.x, screen.y - view_p0.y);
-                    //cout << "io x = " << local.x<< " y=" << local.y<< std::endl;
-                }*/
+                    auto localX = io.MousePos.x - cursor.x;
+                    auto localY = io.MousePos.y - cursor.y;
+                    mouseFn(localX, localY);
+                }
                 ImGui::EndChild();
                 ImGui::PopStyleVar();
             }
@@ -445,6 +408,8 @@ namespace ui {
         }
     };
 }
+
+
 
 /*
     Todo:
@@ -515,14 +480,17 @@ int main(int argc, char* argv[]) {
 
     auto now = steady_clock::now();
     player.start(now);
-    player.pause(true); //todo: bug here. Shows black screen.
+    player.pause(true);
     render.createFrame(0, player.info.width, player.info.height);
-    render.createFrame(1, player.info.width, player.info.height);
+    //render.createFrame(1, player.info.width, player.info.height);
   
     FpsCounter fps;
     ui::FrameView frameView("frame_1");
     frameView.position = ImVec2(50, 50);
     frameView.size = ImVec2(400, 500);
+    frameView.mouseFn = [](int mx, int my) {
+        mouseCallback(render.frames[0], mx, my);
+    };
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -530,13 +498,13 @@ int main(int argc, char* argv[]) {
         if (player.hasUpdate(now)) {
             const RGBFrame* rgb = player.currentFrame();
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
-            render.updateFrame(1, rgb->width, rgb->height, rgb->pixels);
+            frameView.setProgress(player.ps.progress);
             //player.frameQ.print();
             //fps.print();
         }
 
         ui::start();
-        frameView.draw(player.ps.progress);
+        frameView.draw();
         if (frameView.slider.changedByUser) {
             player.seekProgress(frameView.slider.progress);
         }

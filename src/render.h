@@ -23,7 +23,6 @@ struct Render {
 	void destroyFrames();
 
 	void draw();
-	void select(const glm::vec2& cursor);
 	void move(int dx, int dy);
 	void zoom(float value);
 };

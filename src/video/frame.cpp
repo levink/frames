@@ -1,7 +1,6 @@
 #include <cstdint>
 #include "frame.h"
 
-
 RGBFrame::RGBFrame(int w, int h) {
     if (w > 0 && h > 0) {
         sizeInBytes = (size_t)3 * w * h;

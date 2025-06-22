@@ -80,25 +80,6 @@ void Render::draw() {
 	//shaders.videoShader.draw(frames[1]);
 	shaders.videoShader.disable();
 }
-void Render::select(const glm::vec2& cursor) {
-	selected = -1;
-
-	int index = 0;
-	for (auto& item : frames) {
-		bool hit = item.hit(cursor.x, cursor.y);
-		if (hit) {
-			selected = index;
-			break;
-		}
-		index++;
-	}
-
-	if (selected != -1) {
-		//auto& frame = frames[selected];
-		//auto point = frame.toSceneSpace(cursor);
-		//std::cout << point.x << " " << point.y << std::endl;
-	}
-}
 void Render::move(int dx, int dy) {
 	if (selected > -1) {
 		auto& frame = frames[selected];
