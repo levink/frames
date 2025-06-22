@@ -264,41 +264,36 @@ namespace ui {
         ImGui::NewFrame();
     }
     
-    static void draw() {
+    static void render() {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }   
 
     struct Slider {
         float progress = 0;
-        bool changedByUser = false;
     private:
         bool hold = false;
         float progressLast = 0;
         steady_clock::time_point lastUpdate;
     public:
-        void update(bool active) {
-            changedByUser = false;
-
+        bool update(bool active) {
             if (!hold && active) {
                 hold = true;
-                changedByUser = valueChanged(steady_clock::now());
-                return;
+                return valueChanged(steady_clock::now());
             }
             if (hold && !active) {
                 hold = false;
-                changedByUser = valueChanged(steady_clock::now());
-                return;
+                return valueChanged(steady_clock::now());
             }
             if (hold) {
                 auto now = steady_clock::now();
                 auto delta = duration_cast<milliseconds>(now - lastUpdate).count();
                 if (delta > 250) {
-                    changedByUser = valueChanged(now);
+                    return valueChanged(now);
                 }
             }
+            return false;
         }
-
     private:
         bool valueChanged(const steady_clock::time_point& time) {
             if (progressLast != progress) {
@@ -314,9 +309,8 @@ namespace ui {
         ImVec2 cursor;
         ImVec2 region;
         ImVec2 screen;
-        bool changed = false;
-        void update(const ImVec2& cursor, const ImVec2& region, const ImVec2& screen) {
-            changed = 
+        bool update(const ImVec2& cursor, const ImVec2& region, const ImVec2& screen) {
+            bool changed = 
                 this->cursor.x != cursor.x || 
                 this->cursor.y != cursor.y ||
                 this->region.x != region.x || 
@@ -328,6 +322,7 @@ namespace ui {
                 this->region = region;
                 this->screen = screen;
             }
+            return changed;
         }
     };
 
@@ -338,6 +333,8 @@ namespace ui {
         Viewport viewPort;
         Slider slider;
         function<void(int, int)> mouseFn;
+        function<void(float)> slideFn;
+        function<void(const Viewport&)> reshapeFn;
 
         explicit FrameView(const char* name) : name(name) { }
         void setProgress(float progress) {
@@ -362,8 +359,11 @@ namespace ui {
                 auto cursor = ImGui::GetCursorScreenPos();
                 auto region = ImGui::GetContentRegionAvail();
                 auto screen = ImGui::GetMainViewport()->WorkSize;
-                viewPort.update(cursor, region, screen);
-                
+                bool changed = viewPort.update(cursor, region, screen);
+                if (changed && reshapeFn) {
+                    reshapeFn(viewPort);
+                }
+
                 ImGui::InvisibleButton("full_size_area", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
                 if (ImGui::IsItemHovered() && mouseFn) {
                     ImGuiIO& io = ImGui::GetIO();
@@ -371,6 +371,7 @@ namespace ui {
                     auto localY = io.MousePos.y - cursor.y;
                     mouseFn(localX, localY);
                 }
+
                 ImGui::EndChild();
                 ImGui::PopStyleVar();
             }
@@ -384,7 +385,10 @@ namespace ui {
                 ImGui::BeginChild("slider", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
                 ImGui::SliderFloat("##slider", &slider.progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
-                slider.update(ImGui::IsItemActive());
+                bool changedByUser = slider.update(ImGui::IsItemActive());
+                if (changedByUser && slideFn) {
+                    slideFn(slider.progress);
+                }
                 ImGui::PopItemWidth();
                 ImGui::EndChild();
                 ImGui::PopStyleVar();
@@ -474,6 +478,14 @@ int main(int argc, char* argv[]) {
     frameView.mouseFn = [](int mx, int my) {
         mouseCallback(render.frames[0], mx, my);
     };
+    frameView.slideFn = [](float progress) {
+        player.seekProgress(progress);
+    };
+    frameView.reshapeFn = [](const ui::Viewport& vp) {
+        const auto [left, top] = vp.cursor;
+        const auto [width, height] = vp.region;
+        render.frames[0].reshape(left, top, width, height, vp.screen.y);
+    };
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -488,16 +500,7 @@ int main(int argc, char* argv[]) {
 
         ui::start();
         frameView.draw();
-        if (frameView.slider.changedByUser) {
-            player.seekProgress(frameView.slider.progress);
-        }
-        if (frameView.viewPort.changed) {
-            const auto [left, top] = frameView.viewPort.cursor;
-            const auto [width, height] = frameView.viewPort.region;
-            const auto screenHeight = ImGui::GetMainViewport()->WorkSize.y;
-            render.reshapeFrame(0, left, top, width, height, screenHeight);
-        }
-        
+
         //ImGui::ShowDemoWindow();
         //ImGui::DebugTextEncoding("Привет");
         //ImGui::ShowMetricsWindow();
@@ -505,7 +508,7 @@ int main(int argc, char* argv[]) {
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         render.draw();
-        ui::draw();
+        ui::render();
 
         glFlush();
         glfwSwapBuffers(window);

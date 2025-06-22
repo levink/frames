@@ -1,7 +1,7 @@
 #include "frame.h"
 
 void Frame::reshape(int left, int top, int width, int height, int screenHeight) {
-    viewPort = { left, screenHeight - (top + height) };
+    viewPos = { left, screenHeight - (top + height) };
     viewSize = { width, height };
     cam.reshape(width, height);
 }
