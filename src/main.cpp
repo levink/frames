@@ -20,11 +20,6 @@ using std::chrono::steady_clock;
 using std::chrono::duration_cast;
 using std::function;
 
-struct Settings {
-    int windowWidth = 0;
-    int windowHeight = 0;
-};
-
 struct PlayState {
     bool paused = false;    
     bool update = false;    // when paused or manual seek
@@ -178,16 +173,8 @@ struct PlayController {
 };
 
 Render render;
-Settings settings;
 PlayController player(render);
 
-static void reshape(int w, int h) {
-    settings.windowWidth = w;
-    settings.windowHeight = h;
-}
-static void reshapeWindow(GLFWwindow*, int w, int h) {
-    reshape(w, h);
-}
 static void mouseCallback(Frame& frame, int mx, int my) {
 
     ImGuiIO& io = ImGui::GetIO();
@@ -247,7 +234,6 @@ static bool loadGLES(GLFWwindow* window) {
 static void initWindow(GLFWwindow* window) {
     glfwWindowHint(GLFW_DEPTH_BITS, 16);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
-    glfwSetFramebufferSizeCallback(window, reshapeWindow);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetWindowPos(window, 400, 200);
     glfwSwapInterval(1);
@@ -270,13 +256,14 @@ static void destroyImGui() {
     ImGui::DestroyContext();
 }
 
-
 namespace ui {
+
     static void start() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
     }
+    
     static void draw() {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -409,8 +396,6 @@ namespace ui {
     };
 }
 
-
-
 /*
     Todo:
         open file dialog - select file
@@ -469,8 +454,6 @@ int main(int argc, char* argv[]) {
     render.loadShaders();
     initWindow(window);
     initImGui(window);
-    reshape(windowWidth, windowHeight);
-
 
     const char* fileName = "C:/Users/Konst/Desktop/IMG_3504.MOV";
     if (!player.open(fileName)) {
