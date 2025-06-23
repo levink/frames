@@ -23,7 +23,6 @@ using std::function;
 using std::list;
 using std::string;
 
-
 struct PlayState {
     bool paused = false;    
     bool update = false;    // when paused or manual seek
@@ -357,90 +356,6 @@ namespace ui {
         }
     };
 
-    struct ExplorerWindow {
-        
-        struct Node {
-            bool folder = false;
-            bool loaded = false;
-            fs::path path;
-            string name;
-            list<Node> childreen;
-        };
-
-        Node root;
-        void open(const fs::path& path) {
-           
-            //auto path = fs::path("C:\\Users\\Konst\\Desktop"); //or fs::current_path();
-          /*  std::cout << "exists() = " << fs::exists(path) << "\n"
-                << "relative_path() = " << path.relative_path() << "\n"
-                << "parent_path() = " << path.parent_path() << "\n"
-                << "filename() = " << path.filename() << "\n"
-                << "stem() = " << path.stem() << "\n"
-                << "extension() = " << path.extension() << "\n"
-                << "isDirectory = "<< fs::is_directory(path) << "\n";
-            */
-
-            if (fs::is_directory(path)) {
-                root.folder = true;
-                root.loaded = true;
-                root.path = path;
-                root.name = path.string(); //todo: convert to utf8 string
-                loadFolder(path, root.childreen);
-            }
-            else {
-                root.folder = false;
-                root.loaded = true;
-                root.path = path;
-                root.name = path.string(); //todo: convert to utf8 string
-            }
-        }
-        void show() {
-            ImGui::Begin("child2");
-            ImGui::Text("Hello!");
-            showFolder(root, true);
-            ImGui::End();
-        }
-    
-    private:
-        void loadFolder(const fs::path& path, list<Node>& result) {
-            for (const auto& child : fs::directory_iterator(path)) {
-                auto& childPath = child.path();
-                auto fileNameUTF8Str = childPath.filename().u8string();
-                auto fileNameUTF8Bytes = string(fileNameUTF8Str.begin(), fileNameUTF8Str.end());
-                bool folder = fs::is_directory(childPath);
-                bool loaded = false;
-                result.emplace_back(Node{ folder, loaded, childPath, std::move(fileNameUTF8Bytes) });
-            }
-            std::stable_sort(result.begin(), result.end(), [](const Node& left, const Node& right) {
-                // Folders - on the top
-                // Files - on the bottom 
-                return left.folder > right.folder; 
-            });
-        }
-        void showFolder(Node& node, bool opened) {
-            ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesFull;
-            if (opened) {
-                base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
-            }
-
-            if (ImGui::TreeNodeEx(node.name.c_str(), base_flags)) {
-                if (!node.loaded) {
-                    node.loaded = true;
-                    loadFolder(node.path, node.childreen);
-                }
-                for (size_t index = 0; auto& child : node.childreen) {
-                    if (child.folder) {
-                        showFolder(child, false);
-                    }
-                    else {
-                        ImGui::Selectable(child.name.c_str());
-                    }
-                }
-                ImGui::TreePop();
-            }
-        }
-    };
-
     struct FrameWindow {
         const char* name;
         ImVec2 position;
@@ -515,11 +430,111 @@ namespace ui {
             ImGui::PopStyleVar();
         }
     };
-}
 
+    struct FolderWindow {
+
+        struct Node {
+            bool folder = false;
+            bool loaded = false;
+            bool opened = false;
+            fs::path path;
+            string name;
+            list<Node> childreen;
+        };
+
+        const char* name;
+        bool opened = true;
+        Node root;
+
+        explicit FolderWindow(const char* name) : name(name) {}
+        void open(const fs::path& path) {
+            if (fs::is_directory(path)) {
+                root.folder = true;
+                root.loaded = true;
+                root.opened = true;
+                root.path = path;
+                root.name = toUTF8(path);
+                loadFolder(path, root.childreen);
+            }
+            else {
+                root.folder = false;
+                root.loaded = false;
+                root.opened = false;
+                root.path = path;
+                root.name = toUTF8(path.filename());
+            }
+        }
+        void show() {
+            if (opened) {
+                ImGui::Begin(name, &opened);
+                showFolder(root);
+                ImGui::End();
+            }
+        }
+        
+        //Todo: implement this
+        void refresh() {
+            /*
+                Need check correctness of all filenames & folders
+                because structure might be changed from outside
+            */
+        }
+
+    private:
+        void loadFolder(const fs::path& path, list<Node>& result) {
+            for (const auto& child : fs::directory_iterator(path)) {
+                auto& childPath = child.path();
+
+                Node node;
+                node.folder = fs::is_directory(childPath);
+                node.loaded = false;
+                node.opened = false;
+                node.path = childPath;
+                node.name = toUTF8(childPath.filename());
+                result.push_back(node);
+            }
+
+            auto foldersOnTop = [](const Node& left, const Node& right) {
+                return left.folder > right.folder;
+            };
+            std::stable_sort(result.begin(), result.end(), foldersOnTop);
+        }
+        void showFolder(Node& node) {
+            ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesNone;
+            if (node.opened) {
+                base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
+            
+            node.opened = false;
+            if (ImGui::TreeNodeEx(node.name.c_str(), base_flags)) {
+                node.opened = true;
+                if (!node.loaded) {
+                    node.loaded = true;
+                    loadFolder(node.path, node.childreen);
+                }
+                for (auto& child : node.childreen) {
+                    if (child.folder) {
+                        showFolder(child);
+                    } else {
+                        showFile(child);
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+        void showFile(Node& node) {
+            ImGui::Selectable(node.name.c_str());
+        }
+        string toUTF8(const fs::path& path) {
+            auto utf8 = path.u8string();
+            return std::move(string(utf8.begin(), utf8.end()));
+        }
+    };
+}
 /*
     Todo:
         open file dialog - select file
+        drag & drop video
         draw points on video
         select between modes:
             1. move/scale video
@@ -561,7 +576,7 @@ int main(int argc, char* argv[]) {
     //render.createFrame(1, player.info.width, player.info.height);
   
     FpsCounter fps;
-    ui::FrameWindow frameWindow("frame_1");
+    ui::FrameWindow frameWindow("frameWindow");
     frameWindow.position = ImVec2(50, 50);
     frameWindow.size = ImVec2(400, 500);
     frameWindow.mouseFn = [](int mx, int my) {
@@ -576,8 +591,8 @@ int main(int argc, char* argv[]) {
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
 
-    ui::ExplorerWindow explorer;
-    explorer.open(fs::path("C:\\Users\\Konst\\Desktop"));
+    ui::FolderWindow folderWindow("folderWindow");
+    folderWindow.open(fs::path("C:\\Users\\Konst\\Desktop"));
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -593,11 +608,14 @@ int main(int argc, char* argv[]) {
 
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        render.draw(); //todo: perfect would be render frames to textures and use them all in the imgui side
+        //todo: 
+        // perfect would be render frames to the textures (RTT)
+        // and use them all in the imgui side
+        render.draw(); 
 
         ui::start();
         ui::showMainMenuBar();
-        explorer.show();
+        folderWindow.show();
         frameWindow.show();
         ui::showDebug();
         ui::render();
