@@ -260,6 +260,16 @@ static void destroyImGui() {
 
 namespace ui {
 
+    namespace dragDrop {
+        constexpr static const char* PATH_TAG = "DRAG_DROP_PATH";
+        static const void* pack(const string& value) {
+            return &value;
+        }
+        static const string* unpackString(void* data) {
+            return *(string**)(data);   // Take care =)
+        }
+    }
+
     static void start() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -366,6 +376,7 @@ namespace ui {
         function<void(int, int)> mouseFn;
         function<void(float)> slideFn;
         function<void(const Viewport&)> reshapeFn;
+        function<void(const string&)> acceptDropFn;
 
         explicit FrameWindow(const char* name) : name(name) { }
         void setProgress(float progress) {
@@ -397,11 +408,19 @@ namespace ui {
                 }
 
                 ImGui::InvisibleButton("full_size_area", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-                if (ImGui::IsItemHovered() && mouseFn) {
+                if (mouseFn && ImGui::IsItemHovered()) {
                     ImGuiIO& io = ImGui::GetIO();
                     auto localX = io.MousePos.x - cursor.x;
                     auto localY = io.MousePos.y - cursor.y;
                     mouseFn(localX, localY);
+                }
+
+                if (acceptDropFn && ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(dragDrop::PATH_TAG)) {
+                        auto value = dragDrop::unpackString(payload->Data);
+                        acceptDropFn(*value);
+                    }
+                    ImGui::EndDragDropTarget();
                 }
 
                 ImGui::EndChild();
@@ -432,20 +451,23 @@ namespace ui {
     };
 
     struct FolderWindow {
-
+    
+    private:
         struct Node {
             bool folder = false;
             bool loaded = false;
             bool opened = false;
             fs::path path;
-            string name;
+            string pathUTF8;    //todo: need only for files in drag&drop cases?  not for folders
+            string nameUTF8;
             list<Node> childreen;
         };
 
         const char* name;
         bool opened = true;
         Node root;
-
+    
+    public:
         explicit FolderWindow(const char* name) : name(name) {}
         void open(const fs::path& path) {
             if (fs::is_directory(path)) {
@@ -453,7 +475,8 @@ namespace ui {
                 root.loaded = true;
                 root.opened = true;
                 root.path = path;
-                root.name = toUTF8(path);
+                root.pathUTF8 = toUTF8(path);
+                root.nameUTF8 = toUTF8(path);
                 loadFolder(path, root.childreen);
             }
             else {
@@ -461,20 +484,21 @@ namespace ui {
                 root.loaded = false;
                 root.opened = false;
                 root.path = path;
-                root.name = toUTF8(path.filename());
+                root.pathUTF8 = toUTF8(path);
+                root.nameUTF8 = toUTF8(path.filename());
             }
         }
         void show() {
             if (opened) {
-                ImGui::Begin(name, &opened);
+                ImGui::Begin(name, &opened, ImGuiWindowFlags_HorizontalScrollbar);
                 showFolder(root);
                 ImGui::End();
             }
         }
-        
-        //Todo: implement this
         void refresh() {
             /*
+                Todo: implement this
+                
                 Need check correctness of all filenames & folders
                 because structure might be changed from outside
             */
@@ -490,7 +514,8 @@ namespace ui {
                 node.loaded = false;
                 node.opened = false;
                 node.path = childPath;
-                node.name = toUTF8(childPath.filename());
+                node.pathUTF8 = toUTF8(childPath);
+                node.nameUTF8 = toUTF8(childPath.filename());
                 result.push_back(node);
             }
 
@@ -506,7 +531,7 @@ namespace ui {
             }
             
             node.opened = false;
-            if (ImGui::TreeNodeEx(node.name.c_str(), base_flags)) {
+            if (ImGui::TreeNodeEx(node.nameUTF8.c_str(), base_flags)) {
                 node.opened = true;
                 if (!node.loaded) {
                     node.loaded = true;
@@ -523,7 +548,13 @@ namespace ui {
             }
         }
         void showFile(Node& node) {
-            ImGui::Selectable(node.name.c_str());
+            ImGui::Selectable(node.nameUTF8.c_str());
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+                auto data = dragDrop::pack(node.pathUTF8);
+                ImGui::SetDragDropPayload(dragDrop::PATH_TAG, &data, sizeof(data), ImGuiCond_Once);
+                ImGui::Text(node.nameUTF8.c_str());
+                ImGui::EndDragDropSource();
+            }
         }
         string toUTF8(const fs::path& path) {
             auto utf8 = path.u8string();
@@ -590,7 +621,10 @@ int main(int argc, char* argv[]) {
         const auto [width, height] = vp.region;
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
-
+    frameWindow.acceptDropFn = [](const string& name) {
+        cout << "drop " << name << endl;
+    };
+    
     ui::FolderWindow folderWindow("folderWindow");
     folderWindow.open(fs::path("C:\\Users\\Konst\\Desktop"));
 
