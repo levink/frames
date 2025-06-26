@@ -13,8 +13,12 @@ add_subdirectory(lib/gtest)
 add_subdirectory(lib/imgui)
 
 add_executable(app 
+	
 	lib/imgui/backends/imgui_impl_glfw.cpp
     lib/imgui/backends/imgui_impl_opengl3.cpp
+	lib/nfd/nfd_common.c
+	lib/nfd/nfd_win.cpp
+
 	src/image/lodepng.cpp
 	src/model/camera.cpp
 	src/model/frame.cpp
@@ -24,7 +28,6 @@ add_executable(app
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
 	src/ui/ui.cpp
-	src/util/fpscounter.cpp
 	src/video/frame.cpp
 	src/video/video.cpp
 	src/main.cpp
@@ -33,6 +36,7 @@ add_executable(app
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/include/ffmpeg/)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/lib/imgui/)
+target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/lib/nfd/include/)
 target_link_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/lib/ffmpeg)
 target_link_libraries(app PRIVATE glad glfw ffmpeg imgui)
 #set_target_properties(app PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup /SUBSYSTEM:WINDOWS")

@@ -5,10 +5,10 @@
 #include <functional>
 #include <filesystem>
 #include "ui/ui.h"
-#include "util/fpscounter.h"
 #include "video/video.h"
 #include "render.h"
 #include "imgui.h"
+#include "nfd.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
@@ -199,7 +199,7 @@ static void mouseCallback(Frame& frame, int mx, int my) {
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace ui::keyboard;
-    
+
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureKeyboard) {
         return;
@@ -257,6 +257,10 @@ static void destroyImGui() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
+static string toUTF8(const fs::path& path) {
+    auto utf8 = path.u8string();
+    return std::move(string(utf8.begin(), utf8.end()));
+}
 
 namespace ui {
 
@@ -270,45 +274,21 @@ namespace ui {
         }
     }
 
-    static void start() {
+    static void newFrame() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
     }
     
     static void render() {
+        ImGui::ShowDemoWindow();
+        //ImGui::DebugTextEncoding("Привет");
+        //ImGui::ShowMetricsWindow();
+
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }   
 
-    static void showDebug() {
-        ImGui::ShowDemoWindow();
-        //ImGui::DebugTextEncoding("Привет");
-        //ImGui::ShowMetricsWindow();
-    }
-
-    static void showMainMenuBar() {
-        if (ImGui::BeginMainMenuBar())
-        {
-            if (ImGui::BeginMenu("File"))
-            {
-              /*  ShowExampleMenuFile();*/
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Edit"))
-            {
-                if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-                if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {} // Disabled item
-                ImGui::Separator();
-                if (ImGui::MenuItem("Cut", "CTRL+X")) {}
-                if (ImGui::MenuItem("Copy", "CTRL+C")) {}
-                if (ImGui::MenuItem("Paste", "CTRL+V")) {}
-                ImGui::EndMenu();
-            }
-            ImGui::EndMainMenuBar();
-        }
-    }
-  
     struct Slider {
         float progress = 0;
     private:
@@ -366,6 +346,64 @@ namespace ui {
         }
     };
 
+    struct MainMenuBar {
+    private:
+        GLFWwindow* window = nullptr;
+    public:
+        function<void(const char*)> openFolderFn;
+        explicit MainMenuBar(GLFWwindow* window) : window(window) {}
+        void show() {
+            if (ImGui::BeginMainMenuBar())
+            {
+                if (ImGui::BeginMenu("File")) {
+                    if (ImGui::MenuItem("Open File...", "Ctrl+O")) {}
+                    if (ImGui::MenuItem("Open Folder...", "Ctrl+K Ctrl+O")) { openNFD(); }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Quit", "Alt+F4")) { quit(); }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Edit")) {
+                    if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
+                    if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {} // Disabled item
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Cut", "CTRL+X")) {}
+                    if (ImGui::MenuItem("Copy", "CTRL+C")) {}
+                    if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+                    ImGui::EndMenu();
+                }
+                ImGui::EndMainMenuBar();
+            }
+        }
+    private:
+        void openNFD() {
+            static bool dialogOpened = false;
+            
+            if (dialogOpened) {
+                return;
+            }
+            
+            dialogOpened = true;
+                
+            nfdchar_t* selectedPath = nullptr;
+            nfdresult_t result = NFD_PickFolder(nullptr, &selectedPath);
+            if (result == NFD_OKAY) {
+                if (openFolderFn) {
+                    openFolderFn(selectedPath);
+                }
+                NFD_Free(&selectedPath);
+            }
+            else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
+            else if (result == NFD_ERROR) {/*cout << "nfd error" << endl;*/ }
+            
+            dialogOpened = false;
+        }
+        void quit() const {
+            if (window) {
+                glfwSetWindowShouldClose(window, GL_TRUE);
+            }
+        }
+    };
+
     struct FrameWindow {
         const char* name;
         ImVec2 position;
@@ -378,7 +416,10 @@ namespace ui {
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
-        explicit FrameWindow(const char* name) : name(name) { }
+        FrameWindow(const char* name, const ImVec2& position, const ImVec2& size) : 
+            name(name),
+            position(position),
+            size(size) { }
         void setProgress(float progress) {
             slider.progress = progress;
         }
@@ -458,17 +499,18 @@ namespace ui {
             bool loaded = false;
             bool opened = false;
             fs::path path;
-            string pathUTF8;    //todo: need only for files in drag&drop cases?  not for folders
+            string pathUTF8;
             string nameUTF8;
             list<Node> childreen;
         };
 
-        const char* name;
-        bool opened = true;
-        Node root;
+        const char* windowName;
+        bool windowOpened = true;
+        
     
     public:
-        explicit FolderWindow(const char* name) : name(name) {}
+        Node root;
+        explicit FolderWindow(const char* name) : windowName(name) {}
         void open(const fs::path& path) {
             if (fs::is_directory(path)) {
                 root.folder = true;
@@ -476,8 +518,8 @@ namespace ui {
                 root.opened = true;
                 root.path = path;
                 root.pathUTF8 = toUTF8(path);
-                root.nameUTF8 = toUTF8(path);
-                loadFolder(path, root.childreen);
+                root.nameUTF8 = toUTF8(path.filename());
+                loadChildreen(path, root.childreen);
             }
             else {
                 root.folder = false;
@@ -489,23 +531,30 @@ namespace ui {
             }
         }
         void show() {
-            if (opened) {
-                ImGui::Begin(name, &opened, ImGuiWindowFlags_HorizontalScrollbar);
-                showFolder(root);
+            if (windowOpened) {
+                ImGui::Begin(windowName, &windowOpened, 
+                    ImGuiWindowFlags_NoCollapse | 
+                    ImGuiWindowFlags_NoTitleBar | 
+                    ImGuiWindowFlags_HorizontalScrollbar);
+
+                ImGui::Text("test");
+                ImGui::Button("clickBtn");
+                ImGui::Separator();
+                showChildreen(root);
                 ImGui::End();
             }
         }
         void refresh() {
             /*
                 Todo: implement this
-                
                 Need check correctness of all filenames & folders
                 because structure might be changed from outside
             */
         }
 
     private:
-        void loadFolder(const fs::path& path, list<Node>& result) {
+        void loadChildreen(const fs::path& path, list<Node>& result) {
+            result.clear();
             for (const auto& child : fs::directory_iterator(path)) {
                 auto& childPath = child.path();
 
@@ -524,7 +573,7 @@ namespace ui {
             };
             std::stable_sort(result.begin(), result.end(), foldersOnTop);
         }
-        void showFolder(Node& node) {
+        void showChildreen(Node& node) {
             ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesNone;
             if (node.opened) {
                 base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
@@ -535,11 +584,11 @@ namespace ui {
                 node.opened = true;
                 if (!node.loaded) {
                     node.loaded = true;
-                    loadFolder(node.path, node.childreen);
+                    loadChildreen(node.path, node.childreen);
                 }
                 for (auto& child : node.childreen) {
                     if (child.folder) {
-                        showFolder(child);
+                        showChildreen(child);
                     } else {
                         showFile(child);
                     }
@@ -556,21 +605,22 @@ namespace ui {
                 ImGui::EndDragDropSource();
             }
         }
-        string toUTF8(const fs::path& path) {
-            auto utf8 = path.u8string();
-            return std::move(string(utf8.begin(), utf8.end()));
-        }
     };
 }
 /*
     Todo:
-        open file dialog - select file
-        drag & drop video
-        draw points on video
-        select between modes:
+        draw (points, lines, etc...) --> show demo after this
+        select folder
+        drag & drop video + reopen file
+        two frames
+        play buttons
+        select mode for frame(?):
             1. move/scale video
             2. draw on video
             3. playing/steps (?)
+
+        perfect would be render frames to the textures (RTT)
+        and use them all in the imgui side
 */
 
 int main(int argc, char* argv[]) {
@@ -605,11 +655,16 @@ int main(int argc, char* argv[]) {
     player.pause(true);
     render.createFrame(0, player.info.width, player.info.height);
     //render.createFrame(1, player.info.width, player.info.height);
-  
-    FpsCounter fps;
-    ui::FrameWindow frameWindow("frameWindow");
-    frameWindow.position = ImVec2(50, 50);
-    frameWindow.size = ImVec2(400, 500);
+
+
+    ui::MainMenuBar mainMenuBar(window);
+    ui::FrameWindow frameWindow("frameWindow", { 50, 50 }, {400, 500});
+    ui::FolderWindow folderWindow("folderWindow");
+
+    mainMenuBar.openFolderFn = [&folderWindow](const char* pathUTF8) {       
+        fs::path path = fs::u8path(pathUTF8);
+        folderWindow.open(path);
+    };
     frameWindow.mouseFn = [](int mx, int my) {
         mouseCallback(render.frames[0], mx, my);
     };
@@ -625,8 +680,8 @@ int main(int argc, char* argv[]) {
         cout << "drop " << name << endl;
     };
     
-    ui::FolderWindow folderWindow("folderWindow");
-    folderWindow.open(fs::path("C:\\Users\\Konst\\Desktop"));
+    auto defaultPath = fs::current_path().u8string();
+    folderWindow.open(defaultPath);
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -637,21 +692,16 @@ int main(int argc, char* argv[]) {
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
             frameWindow.setProgress(player.ps.progress);
             //player.frameQ.print();
-            //fps.print();
         }
 
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        //todo: 
-        // perfect would be render frames to the textures (RTT)
-        // and use them all in the imgui side
         render.draw(); 
 
-        ui::start();
-        ui::showMainMenuBar();
+        ui::newFrame();
+        mainMenuBar.show();
         folderWindow.show();
         frameWindow.show();
-        ui::showDebug();
         ui::render();
 
         glFlush();
