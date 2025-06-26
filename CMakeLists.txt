@@ -20,6 +20,7 @@ add_executable(app
 	lib/nfd/nfd_win.cpp
 
 	src/image/lodepng.cpp
+	src/io/io.cpp
 	src/model/camera.cpp
 	src/model/frame.cpp
 	src/model/mesh.cpp
@@ -27,7 +28,6 @@ add_executable(app
 	src/shader/shaderBase.cpp
 	src/shader/shaderLog.cpp
 	src/shader/shaderSource.cpp
-	src/ui/ui.cpp
 	src/video/frame.cpp
 	src/video/video.cpp
 	src/main.cpp

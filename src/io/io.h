@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 
 
-namespace ui {
+namespace io {
     enum class KeyMod {
         NO = 0,
         SHIFT = 1,
@@ -115,7 +115,7 @@ namespace ui {
         glm::ivec2 getCursor();
     };
 
-    static UIState ui_state{
+    static UIState io_state{
         0, 0,
         {false, false, false},
         mouse::Button::NO

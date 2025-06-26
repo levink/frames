@@ -4,7 +4,7 @@
 #include <chrono>
 #include <functional>
 #include <filesystem>
-#include "ui/ui.h"
+#include "io/io.h"
 #include "video/video.h"
 #include "render.h"
 #include "imgui.h"
@@ -189,7 +189,6 @@ static void mouseCallback(Frame& frame, int mx, int my) {
         }
     }
     if (io.MouseWheel) {
-        //cout << "scroll= " << io.MouseWheel << endl;
         frame.cam.zoom(io.MouseWheel * 0.1f);
     }
 
@@ -198,7 +197,7 @@ static void mouseCallback(Frame& frame, int mx, int my) {
     }
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
-    using namespace ui::keyboard;
+    using namespace io::keyboard;
 
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureKeyboard) {
@@ -279,15 +278,15 @@ namespace ui {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
     }
-    
+
     static void render() {
-        ImGui::ShowDemoWindow();
+        //ImGui::ShowDemoWindow();
         //ImGui::DebugTextEncoding("Привет");
         //ImGui::ShowMetricsWindow();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    }   
+    }
 
     struct Slider {
         float progress = 0;
@@ -347,17 +346,13 @@ namespace ui {
     };
 
     struct MainMenuBar {
-    private:
-        GLFWwindow* window = nullptr;
-    public:
+        function<void()> quitFn;
         function<void(const char*)> openFolderFn;
-        explicit MainMenuBar(GLFWwindow* window) : window(window) {}
         void show() {
             if (ImGui::BeginMainMenuBar())
             {
                 if (ImGui::BeginMenu("File")) {
-                    if (ImGui::MenuItem("Open File...", "Ctrl+O")) {}
-                    if (ImGui::MenuItem("Open Folder...", "Ctrl+K Ctrl+O")) { openNFD(); }
+                    if (ImGui::MenuItem("Open Folder", "Ctrl+O")) { pickFolder(); }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Quit", "Alt+F4")) { quit(); }
                     ImGui::EndMenu();
@@ -375,7 +370,7 @@ namespace ui {
             }
         }
     private:
-        void openNFD() {
+        void pickFolder() const {
             static bool dialogOpened = false;
             
             if (dialogOpened) {
@@ -392,23 +387,21 @@ namespace ui {
                 }
                 NFD_Free(&selectedPath);
             }
-            else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
-            else if (result == NFD_ERROR) {/*cout << "nfd error" << endl;*/ }
+            else if (result == NFD_CANCEL) {    /*cout << "nfd cancel" << endl;*/ }
+            else if (result == NFD_ERROR) {     /*cout << "nfd error" << endl;*/ }
             
             dialogOpened = false;
         }
         void quit() const {
-            if (window) {
-                glfwSetWindowShouldClose(window, GL_TRUE);
+            if (quitFn) {
+                quitFn();
             }
         }
     };
 
     struct FrameWindow {
-        const char* name;
-        ImVec2 position;
-        ImVec2 size;
-        bool opened = true;
+        const char* windowName;
+        bool windowOpened = true;
         Viewport viewPort;
         Slider slider;
         function<void(int, int)> mouseFn;
@@ -416,25 +409,20 @@ namespace ui {
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
-        FrameWindow(const char* name, const ImVec2& position, const ImVec2& size) : 
-            name(name),
-            position(position),
-            size(size) { }
+        explicit FrameWindow(const char* name) : windowName(name) { }
         void setProgress(float progress) {
             slider.progress = progress;
         }
         void show() {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-            ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+            //ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
+            //ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
 
             constexpr int padding = 8;
             ImGuiWindowFlags flags =
-                //ImGuiWindowFlags_NoTitleBar |
-                //ImGuiWindowFlags_NoInputs |
                 ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoBackground;
-            ImGui::Begin(name, &opened, flags);
+            ImGui::Begin(windowName, &windowOpened, flags);
 
             //frame
             {
@@ -536,11 +524,8 @@ namespace ui {
                     ImGuiWindowFlags_NoCollapse | 
                     ImGuiWindowFlags_NoTitleBar | 
                     ImGuiWindowFlags_HorizontalScrollbar);
-
-                ImGui::Text("test");
-                ImGui::Button("clickBtn");
-                ImGui::Separator();
                 showChildreen(root);
+
                 ImGui::End();
             }
         }
@@ -606,6 +591,7 @@ namespace ui {
             }
         }
     };
+
 }
 /*
     Todo:
@@ -657,10 +643,13 @@ int main(int argc, char* argv[]) {
     //render.createFrame(1, player.info.width, player.info.height);
 
 
-    ui::MainMenuBar mainMenuBar(window);
-    ui::FrameWindow frameWindow("frameWindow", { 50, 50 }, {400, 500});
+    ui::MainMenuBar mainMenuBar;
+    ui::FrameWindow frameWindow("frameWindow");
     ui::FolderWindow folderWindow("folderWindow");
 
+    mainMenuBar.quitFn = [&window]() {
+        glfwSetWindowShouldClose(window, GL_TRUE);
+    };
     mainMenuBar.openFolderFn = [&folderWindow](const char* pathUTF8) {       
         fs::path path = fs::u8path(pathUTF8);
         folderWindow.open(path);

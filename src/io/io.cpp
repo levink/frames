@@ -1,7 +1,7 @@
 #include <iostream>
-#include "ui.h"
+#include "io.h"
 
-using namespace ui;
+using namespace io;
 
 bool UIState::is(KeyMod mod) {
     if (mod == KeyMod::NO) {
@@ -36,26 +36,26 @@ glm::ivec2 UIState::getCursor() {
     return { x, y };
 }
 
-namespace ui {
+namespace io {
     namespace keyboard {
         KeyEvent::KeyEvent(int key, int action, int mod) {
             this->key = (keyboard::Key)key;
             this->action = (keyboard::Action)action;
 
             if (action == keyboard::Action::PRESS) {
-                if (key == GLFW_KEY_LEFT_SHIFT)   ui_state.keyPressed[0] = true;
-                if (key == GLFW_KEY_LEFT_CONTROL) ui_state.keyPressed[1] = true;
-                if (key == GLFW_KEY_LEFT_ALT)     ui_state.keyPressed[2] = true;
+                if (key == GLFW_KEY_LEFT_SHIFT)   io_state.keyPressed[0] = true;
+                if (key == GLFW_KEY_LEFT_CONTROL) io_state.keyPressed[1] = true;
+                if (key == GLFW_KEY_LEFT_ALT)     io_state.keyPressed[2] = true;
             }
             else if (action == keyboard::Action::REPEAT) {
-                if (mod == GLFW_MOD_SHIFT)   ui_state.keyPressed[0] = true;
-                if (mod == GLFW_MOD_CONTROL) ui_state.keyPressed[1] = true;
-                if (mod == GLFW_MOD_ALT)     ui_state.keyPressed[2] = true;
+                if (mod == GLFW_MOD_SHIFT)   io_state.keyPressed[0] = true;
+                if (mod == GLFW_MOD_CONTROL) io_state.keyPressed[1] = true;
+                if (mod == GLFW_MOD_ALT)     io_state.keyPressed[2] = true;
             }
             else if (action == keyboard::Action::RELEASE) {
-                if (key == GLFW_KEY_LEFT_SHIFT)   ui_state.keyPressed[0] = false;
-                if (key == GLFW_KEY_LEFT_CONTROL) ui_state.keyPressed[1] = false;
-                if (key == GLFW_KEY_LEFT_ALT)     ui_state.keyPressed[2] = false;
+                if (key == GLFW_KEY_LEFT_SHIFT)   io_state.keyPressed[0] = false;
+                if (key == GLFW_KEY_LEFT_CONTROL) io_state.keyPressed[1] = false;
+                if (key == GLFW_KEY_LEFT_ALT)     io_state.keyPressed[2] = false;
             }
         }
         bool KeyEvent::is(keyboard::Key key) {
@@ -66,12 +66,12 @@ namespace ui {
                 this->key == key && (
                     this->action == keyboard::Action::PRESS ||
                     this->action == keyboard::Action::REPEAT
-                    ) && ui_state.is(mod);
+                    ) && io_state.is(mod);
             return result;
         }
         bool KeyEvent::is(KeyMod mod, keyboard::Action action) {
             using namespace keyboard;
-            bool pressed = ui_state.is(mod);
+            bool pressed = io_state.is(mod);
             if (action == Action::PRESS) {
                 return pressed;
             }
@@ -84,11 +84,11 @@ namespace ui {
 
     namespace mouse {
         MouseEvent move(int x, int y) {
-            auto dx = x - ui_state.x;
-            auto dy = y - ui_state.y;
-            ui_state.x = x;
-            ui_state.y = y;
-            return MouseEvent{ ui_state.mousePressed, Action::MOVE, dx, dy };
+            auto dx = x - io_state.x;
+            auto dy = y - io_state.y;
+            io_state.x = x;
+            io_state.y = y;
+            return MouseEvent{ io_state.mousePressed, Action::MOVE, dx, dy };
         }
         MouseEvent click(int button, int action, int mod) {
 
@@ -104,7 +104,7 @@ namespace ui {
             else                             mouseAction = Action::NONE;
 
             auto pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
-            ui_state.mousePressed = pressed ? mouseButton : Button::NO;
+            io_state.mousePressed = pressed ? mouseButton : Button::NO;
 
             return MouseEvent{ mouseButton, mouseAction, 0, 0 };
         }
@@ -131,14 +131,14 @@ namespace ui {
                 return false;
             }
 
-            bool modCheck = ui_state.is(mod);
+            bool modCheck = io_state.is(mod);
             return modCheck;
         }
         glm::ivec2 MouseEvent::getDelta() const {
             return { dx, dy };
         }
         glm::ivec2 MouseEvent::getCursor() {
-            return ui_state.getCursor();
+            return io_state.getCursor();
         }
     }
 }
