@@ -293,8 +293,6 @@ StreamInfo VideoReader::getStreamInfo() const {
 }
 
 
-FrameLoader::FrameLoader(VideoReader& reader) :
-    reader(reader) { }
 FrameLoader::~FrameLoader() {
     if (t.joinable()) {
         t.join();
@@ -307,6 +305,13 @@ FrameLoader::~FrameLoader() {
     
     delete result;
     result = nullptr;
+}
+bool FrameLoader::open(const char* fileName, StreamInfo& info) {
+    if (reader.open(fileName)) {
+        info = reader.getStreamInfo();
+        return true;
+    }
+    return false;
 }
 void FrameLoader::start() {
     finished.store(false);

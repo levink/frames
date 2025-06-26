@@ -77,7 +77,7 @@ class FrameLoader {
     std::condition_variable cv;
     std::atomic<bool> finished = false;
     FramePool pool;
-    VideoReader& reader;
+    VideoReader reader;
 
     struct State {
         int8_t loadDir = 1;
@@ -100,9 +100,10 @@ class FrameLoader {
     RGBFrame* readFrame(const State& state);
 
 public:
-    FrameLoader(VideoReader& reader);
+    FrameLoader() = default;
     ~FrameLoader();
 
+    bool open(const char* fileName, StreamInfo& info);
     void start();
     void stop();
     void seek(int8_t loadDir, int64_t seekPts);

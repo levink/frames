@@ -33,24 +33,16 @@ struct PlayState {
 
 struct PlayController {
     Render& render;
-    VideoReader reader;
     StreamInfo info;
     FrameLoader loader;
     FrameQueue frameQ;
     PlayState ps;
     steady_clock::time_point lastUpdate;
 
-    explicit PlayController(Render& render) : 
-        render(render), 
-        loader(reader) //todo: what? mb need refactoring?
-        { } 
+    explicit PlayController(Render& render) : render(render) { } 
     
     bool open(const char* fileName) {
-        if (reader.open(fileName)) {
-            info = reader.getStreamInfo();
-            return true;
-        }
-        return false;
+        return loader.open(fileName, info);
     }
     
     void start() {
