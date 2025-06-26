@@ -24,6 +24,7 @@ using std::list;
 using std::string;
 
 struct PlayState {
+    bool hold = false;      
     bool paused = false;    
     bool update = false;    // when paused or manual seek
     float progress = 0.f;   // [0; 100]
@@ -32,14 +33,11 @@ struct PlayState {
 };
 
 struct PlayController {
-    Render& render;
     StreamInfo info;
     FrameLoader loader;
     FrameQueue frameQ;
     PlayState ps;
     steady_clock::time_point lastUpdate;
-
-    explicit PlayController(Render& render) : render(render) { } 
     
     bool open(const char* fileName) {
         return loader.open(fileName, info);
@@ -56,7 +54,8 @@ struct PlayController {
         loader.stop();
     }
     
-    void seekProgress(float progress) {
+    void seekProgress(float progress, bool hold) {
+        ps.hold = hold;
         auto pts = info.progressToPts(progress);
         seekPts(pts);
     }
@@ -124,7 +123,8 @@ struct PlayController {
         
         frameQ.fillFrom(loader);
         
-        if (ps.paused && ps.update) {
+        bool paused = ps.paused || ps.hold;
+        if (paused && ps.update) {
             const RGBFrame* frame = frameQ.curr();
             if (frame) {
                 ps.update = false;
@@ -135,7 +135,7 @@ struct PlayController {
             }
         }
 
-        if (!ps.paused) {
+        if (!paused) {
             auto durationMicros = duration_cast<microseconds>(now - lastUpdate).count();
             auto durationPts = info.microsToPts(durationMicros);
 
@@ -167,7 +167,7 @@ struct PlayController {
 };
 
 Render render;
-PlayController player(render);
+PlayController player;
 
 static void mouseCallback(Frame& frame, int mx, int my) {
 
@@ -282,31 +282,33 @@ namespace ui {
 
     struct Slider {
         float progress = 0;
-    private:
         bool hold = false;
+    private:
         float lastProgress = 0;
         steady_clock::time_point lastUpdate;
     public:
         bool update(bool active) {
             if (!hold && active) {
                 hold = true;
-                return valueChanged(steady_clock::now());
+                updateValue(steady_clock::now());
+                return true;
             }
             if (hold && !active) {
                 hold = false;
-                return valueChanged(steady_clock::now());
+                updateValue(steady_clock::now());
+                return true;
             }
             if (hold) {
                 auto now = steady_clock::now();
                 auto delta = duration_cast<milliseconds>(now - lastUpdate).count();
                 if (delta > 250) {
-                    return valueChanged(now);
+                    return updateValue(now);
                 }
             }
             return false;
         }
     private:
-        bool valueChanged(const steady_clock::time_point& time) {
+        bool updateValue(const steady_clock::time_point& time) {
             if (lastProgress != progress) {
                 lastProgress = progress;
                 lastUpdate = time;
@@ -397,7 +399,7 @@ namespace ui {
         Viewport viewPort;
         Slider slider;
         function<void(int, int)> mouseFn;
-        function<void(float)> slideFn;
+        function<void(float, bool)> slideFn;
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
@@ -459,7 +461,7 @@ namespace ui {
                 ImGui::SliderFloat("##slider", &slider.progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
                 bool changedByUser = slider.update(ImGui::IsItemActive());
                 if (changedByUser && slideFn) {
-                    slideFn(slider.progress);
+                    slideFn(slider.progress, slider.hold);
                 }
                 ImGui::PopItemWidth();
                 ImGui::EndChild();
@@ -588,8 +590,7 @@ namespace ui {
 /*
     Todo:
         draw (points, lines, etc...) --> show demo after this
-        select folder
-        drag & drop video + reopen file
+        open video by drag & drop
         two frames
         play buttons
         select mode for frame(?):
@@ -649,8 +650,8 @@ int main(int argc, char* argv[]) {
     frameWindow.mouseFn = [](int mx, int my) {
         mouseCallback(render.frames[0], mx, my);
     };
-    frameWindow.slideFn = [](float progress) {
-        player.seekProgress(progress);
+    frameWindow.slideFn = [](float progress, bool hold) {
+        player.seekProgress(progress, hold);
     };
     frameWindow.reshapeFn = [](const ui::Viewport& vp) {
         const auto [left, top] = vp.cursor;
@@ -668,11 +669,9 @@ int main(int argc, char* argv[]) {
 
         auto now = steady_clock::now();
         if (player.hasUpdate(now)) { 
-            //todo: pause player when user holds slider
             const RGBFrame* rgb = player.currentFrame();
             render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
             frameWindow.setProgress(player.ps.progress);
-            //player.frameQ.print();
         }
 
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
