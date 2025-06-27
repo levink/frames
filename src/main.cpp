@@ -40,13 +40,19 @@ struct PlayController {
     steady_clock::time_point lastUpdate;
     
     bool open(const char* fileName) {
-        return loader.open(fileName, info);
-    }
-    
-    void start() {
-        loader.createFrames(10, info.width, info.height);
-        loader.start();
-        lastUpdate = steady_clock::now();
+        frameQ.flush(loader);
+        loader.stop();
+        
+        if (loader.open(fileName, info)) {
+            loader.createFrames(10, info.width, info.height); 
+            loader.start();
+            lastUpdate = steady_clock::now();
+            ps.paused = true;
+            ps.update = true;
+            return true;
+        }
+
+        return false;
     }
 
     void stop() {
@@ -91,7 +97,6 @@ struct PlayController {
     void seekPts(int64_t pts) {
         // flush frameQ
         frameQ.flush(loader);
-        frameQ.loadDir = 1;
 
         // seek && flush loader
         loader.seek(1, pts);
@@ -123,19 +128,7 @@ struct PlayController {
         
         frameQ.fillFrom(loader);
         
-        bool paused = ps.paused || ps.hold;
-        if (paused && ps.update) {
-            const RGBFrame* frame = frameQ.curr();
-            if (frame) {
-                ps.update = false;
-                ps.framePts = frame->pts;
-                ps.frameDur = frame->duration;
-                ps.progress = info.calcProgress(frame->pts);
-                return true;
-            }
-        }
-
-        if (!paused) {
+        if (!ps.paused && !ps.hold) {
             auto durationMicros = duration_cast<microseconds>(now - lastUpdate).count();
             auto durationPts = info.microsToPts(durationMicros);
 
@@ -145,7 +138,8 @@ struct PlayController {
                     auto deltaPts = durationPts - ps.frameDur;
                     if (deltaPts < frame->duration) {
                         lastUpdate = now - microseconds(info.ptsToMicros(deltaPts));
-                    } else {
+                    }
+                    else {
                         lastUpdate = now;
                     }
 
@@ -157,7 +151,17 @@ struct PlayController {
                 }
             }
         }
-
+        else if (ps.update) {
+            const RGBFrame* frame = frameQ.curr();
+            if (frame) {
+                ps.update = false;
+                ps.framePts = frame->pts;
+                ps.frameDur = frame->duration;
+                ps.progress = info.calcProgress(frame->pts);
+                return true;
+            }
+        }
+        
         return false;
     }
 
@@ -489,7 +493,6 @@ namespace ui {
         const char* windowName;
         bool windowOpened = true;
         
-    
     public:
         Node root;
         explicit FolderWindow(const char* name) : windowName(name) {}
@@ -585,12 +588,10 @@ namespace ui {
             }
         }
     };
-
 }
 /*
     Todo:
         draw (points, lines, etc...) --> show demo after this
-        open video by drag & drop
         two frames
         play buttons
         select mode for frame(?):
@@ -598,6 +599,8 @@ namespace ui {
             2. draw on video
             3. playing/steps (?)
 
+        support cyrillic paths in VideoReader
+        move nfd/include to ./include dir? + move nfd to separate lib?
         perfect would be render frames to the textures (RTT)
         and use them all in the imgui side
 */
@@ -629,11 +632,7 @@ int main(int argc, char* argv[]) {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
-
-    player.start();
-    player.pause(true);
     render.createFrame(0, player.info.width, player.info.height);
-    //render.createFrame(1, player.info.width, player.info.height);
 
 
     ui::MainMenuBar mainMenuBar;
@@ -658,8 +657,14 @@ int main(int argc, char* argv[]) {
         const auto [width, height] = vp.region;
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
-    frameWindow.acceptDropFn = [](const string& name) {
-        cout << "drop " << name << endl;
+    frameWindow.acceptDropFn = [](const string& fileName) {
+        auto str = fileName.c_str();
+        if (player.open(str)) {
+            cout << "File open - ok: " << fileName << endl;
+            render.createFrame(0, player.info.width, player.info.height);
+        } else {
+            std::cout << "File open - error" << std::endl;
+        }
     };
     
     auto defaultPath = fs::current_path().u8string();

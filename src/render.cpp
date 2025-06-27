@@ -53,6 +53,9 @@ void Render::destroyShaders() {
 }
 void Render::createFrame(size_t frameIndex, int16_t width, int16_t height) {
 	auto& frame = frames[frameIndex];
+	if (frame.textureId) {
+		glDeleteTextures(1, &frame.textureId);
+	}
 	frame.textureId = createTexture(width, height);
 	frame.mesh = Mesh::createImageMesh(width, height);
 	frame.cam.init({ -width / 2, -height / 2 }, 1.f);

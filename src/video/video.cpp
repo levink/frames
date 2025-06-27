@@ -33,12 +33,19 @@ FramePool::~FramePool() {
 void FramePool::createFrames(size_t count, int w, int h) {
     auto lock = std::lock_guard(mtx);
 
+    for (auto& item : items) {
+        delete item;
+        item = nullptr;
+    }
+    items.clear();
+    items.resize(count);
+    for (size_t i = 0; i < count; i++) {
+        items[i] = new RGBFrame(w, h);
+    }
+
     frameWidth = w;
     frameHeight = h;
-    items.reserve(items.size() + count);
-    for (size_t i = 0; i < count; i++) {
-        items.emplace_back(new RGBFrame(w, h));
-    }
+
 }
 void FramePool::put(RGBFrame* frame) {
     if (frame) {
@@ -114,7 +121,7 @@ void FrameConverter::destroyContext() {
 }
 int FrameConverter::toRGB(const AVFrame* frame, RGBFrame& result) {
     destFrame[0] = result.pixels;
-    destLineSize[0] = 3 * frame->width;
+    destLineSize[0] = RGBFrame::BYTES_PER_PIXEL * frame->width;
     int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
     destFrame[0] = nullptr;
     destLineSize[0] = 0;
@@ -126,14 +133,20 @@ VideoReader::VideoReader() {
     av_log_set_level(AV_LOG_FATAL);
 }
 VideoReader::~VideoReader() {
+    destroy();
+}
+void VideoReader::destroy() {
     if (formatContext) {
         avformat_close_input(&formatContext);
+        formatContext = nullptr;
     }
     if (decoderContext) {
         avcodec_free_context(&decoderContext);
+        decoderContext = nullptr;
     }
     if (packet) {
         av_packet_free(&packet);
+        packet = nullptr;
     }
     if (frame) {
         av_frame_unref(frame);
@@ -142,6 +155,7 @@ VideoReader::~VideoReader() {
     converter.destroyContext();
 }
 bool VideoReader::open(const char* fileName) {
+    destroy();
     eof = false;
 
     if (avformat_open_input(&formatContext, fileName, nullptr, nullptr) < 0) {
@@ -152,6 +166,7 @@ bool VideoReader::open(const char* fileName) {
         return false;// OpenFileResult::StreamInfoNotFound;
     }
 
+    const AVCodec* decoder = nullptr;
     videoStreamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
     if (videoStreamIndex < 0) {
         return false;// OpenFileResult::VideoStreamNotFound;
@@ -186,17 +201,6 @@ bool VideoReader::open(const char* fileName) {
     }
 
     return true;// OpenFileResult::Ok;
-}
-bool VideoReader::read(RGBFrame& result) {
-    if (readRaw()) {
-        bool ok = convert(frame, result);
-        av_frame_unref(frame);
-        av_packet_unref(packet);
-        return ok;
-    }
-
-    std::cout << "readFrame() finished1" << std::endl;
-    return false;
 }
 bool VideoReader::read(RGBFrame& result, int64_t skipPts) {
     while (readRaw()) {    
@@ -292,7 +296,6 @@ StreamInfo VideoReader::getStreamInfo() const {
     };
 }
 
-
 FrameLoader::~FrameLoader() {
     if (t.joinable()) {
         t.join();
@@ -315,18 +318,33 @@ bool FrameLoader::open(const char* fileName, StreamInfo& info) {
 }
 void FrameLoader::start() {
     finished.store(false);
-    {auto lock = std::lock_guard(mtx);}
+    {
+        auto lock = std::lock_guard(mtx);
+        sharedState.loadDir = 1;
+        sharedState.seekPts = -1;
+    }
+    cv.notify_one();
     t = std::thread([this]() {
         playback();
     });
 }
 void FrameLoader::stop() {
+    if (finished) {
+        return;
+    }
+
     finished.store(true);
-    {auto lock = std::lock_guard(mtx);}
+    { auto lock = std::lock_guard(mtx); }
     cv.notify_one();
     if (t.joinable()) {
         t.join();
     }
+
+    pool.put(prevCache);
+    prevCache.clear();
+
+    pool.put(result);
+    result = nullptr;
 }
 void FrameLoader::seek(int8_t loadDir, int64_t seekPts) {
     auto lock = std::lock_guard(mtx);
@@ -581,6 +599,7 @@ void FrameQueue::flush(FrameLoader& loader) {
     }
     items.clear();
     selected = 0;
+    loadDir = 1;
 }
 bool FrameQueue::tooFarFromBegin() const {
     return selected > deltaMin;

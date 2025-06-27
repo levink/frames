@@ -50,7 +50,6 @@ struct FrameConverter {
 struct VideoReader {
     AVFormatContext* formatContext = nullptr;
     AVCodecContext* decoderContext = nullptr;
-    const AVCodec* decoder = nullptr;
     int videoStreamIndex = -1;
     AVPacket* packet = nullptr;
     AVFrame* frame = nullptr;
@@ -61,14 +60,14 @@ struct VideoReader {
     ~VideoReader();
 
     bool open(const char* fileName);
-    bool read(RGBFrame& result);
-    bool read(RGBFrame& result, int64_t skipPts);
+    bool read(RGBFrame& result, int64_t skipPts = 0);
     bool seek(int64_t pts);
     StreamInfo getStreamInfo() const;
 
 private:
     bool readRaw();
     bool convert(const AVFrame* frame, RGBFrame& result);
+    void destroy();
 };
            
 class FrameLoader {
