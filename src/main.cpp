@@ -3,8 +3,8 @@
 #include <iostream>
 #include <chrono>
 #include <functional>
-#include <filesystem>
 #include "io/io.h"
+#include "util/fs.h"
 #include "video/video.h"
 #include "render.h"
 #include "imgui.h"
@@ -12,7 +12,6 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-namespace fs = std::filesystem;
 using namespace video;
 using std::cout;
 using std::endl;
@@ -20,185 +19,6 @@ using std::list;
 using std::function;
 using std::string;
 using std::chrono::steady_clock;
-
-
-//menu commands
-static bool openFileDialog(string& path) {
-    static bool opened = false;
-
-    if (opened) {
-        return false;
-    }
-
-    opened = true;
-    nfdchar_t* bytesUTF8 = nullptr;
-    nfdresult_t result = NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
-    if (result == NFD_OKAY) {
-        path = string(bytesUTF8);
-        NFD_Free(&bytesUTF8);
-        opened = false;
-        return true;
-    }
-    else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
-    else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
-
-    opened = false;
-    return false;
-}
-static bool openFolderDialog(string& path) {
-    static bool opened = false;
-
-    if (opened) {
-        return false;
-    }
-
-    opened = true;
-    nfdchar_t* bytesUTF8 = nullptr;
-    nfdresult_t result = NFD_PickFolder(nullptr, &bytesUTF8);
-    if (result == NFD_OKAY) {
-        path = string(bytesUTF8);// fs::u8path(bytesUTF8);
-        NFD_Free(&bytesUTF8);
-        opened = false;
-        return true;
-    }
-    else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
-    else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
-
-    opened = false;
-    return false;
-}
-
-//global commands
-namespace cmd {
-    static void playFile(Player* player, Frame* frame, const string& path) {
-        if (player->open(path.c_str())) {
-            const auto& info = player->info;
-            frame->create(info.width, info.height);
-            cout << "File open - ok: " << path << endl;
-        }
-        else {
-            std::cout << "File open - error" << std::endl;
-        }
-    }
-    static void openFile(Player* player, Frame* frame) {
-        string path;
-        if (openFileDialog(path)) {
-            playFile(player, frame, path);
-        }
-    }
-    static void togglePause(Player* player) {
-        bool newValue = !(player->ps.paused);
-        player->pause(newValue);
-    }
-    static void seekLeft(Player* player) {
-        player->seekLeft();
-    }
-    static void seekRight(Player* player) {
-        player->seekRight();
-    }
-}
-
-
-Render render;
-Player player;
-
-int count = 0;
-static void mouseCallback(Frame& frame, int mx, int my) {
-
-    ImGuiIO& io = ImGui::GetIO();
-
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        int dx = io.MouseDelta.x;
-        int dy = io.MouseDelta.y;
-        if (dx || dy) {
-            frame.cam.move(dx, -dy);
-        }
-    }
-    if (io.MouseWheel) {
-        frame.cam.zoom(io.MouseWheel * 0.1f);
-    }
-
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        cout << "local x = " << mx << " local y=" << my << std::endl;
-    }
-}
-static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
-    using namespace io;
-    using namespace io::keyboard;
-
-    count++;
-    cout << keyCode << " " << action << " " << mods << endl;
-
-  /*  if (ImGui::GetIO().WantCaptureKeyboard) {
-        return;
-    }*/
-
-    auto key = KeyEvent(keyCode, action, mods);
-    //auto prev = io::lastKeyPressEvent();
-    if (key.is(ESC)) {
-        glfwSetWindowShouldClose(window, GL_TRUE);
-    }
-    else if (key.is(R)) {
-        std::cout << "Reload shaders" << std::endl;
-        render.reloadShaders();
-    }
-    else if (key.is(SPACE)) {
-        cmd::togglePause(&player);
-    }
-    else if (key.is(LEFT)) {
-        cmd::seekLeft(&player);
-    }
-    else if (key.is(RIGHT)) {
-        cmd::seekRight(&player);
-    }
-    else if (key.is(KeyMod::CTRL, O)) {
-       /* if (prev.is(KeyMod::CTRL, K)) {
-            
-        }
-        else {
-            cmd::openFile(&player, &render.frames[0]);
-        }*/
-    }
-}
-static bool loadGLES(GLFWwindow* window) {
-    glfwMakeContextCurrent(window);
-    if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
-        std::cout << "Failed to load GLES2" << std::endl;
-        return false;
-    }
-    
-    printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
-    return true;
-}
-static void initWindow(GLFWwindow* window) {
-    glfwWindowHint(GLFW_DEPTH_BITS, 16);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
-    glfwSetKeyCallback(window, keyCallback);
-    glfwSetWindowPos(window, 400, 200);
-    glfwSwapInterval(1);
-    glfwSetTime(0.0);
-}
-static void initImGui(GLFWwindow* window) {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-
-    ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
-    ImGui_ImplOpenGL3_Init();
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromFileTTF("../../data/fonts/calibri.ttf", 14);
-    io.Fonts->Build();   
-}
-static void destroyImGui() {
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-}
-static string toUTF8(const fs::path& path) {
-    auto utf8 = path.u8string();
-    return std::move(string(utf8.begin(), utf8.end()));
-}
-
 
 namespace ui {
 
@@ -272,10 +92,10 @@ namespace ui {
         ImVec2 region;
         ImVec2 screen;
         bool update(const ImVec2& cursor, const ImVec2& region, const ImVec2& screen) {
-            bool changed = 
-                this->cursor.x != cursor.x || 
+            bool changed =
+                this->cursor.x != cursor.x ||
                 this->cursor.y != cursor.y ||
-                this->region.x != region.x || 
+                this->region.x != region.x ||
                 this->region.y != region.y ||
                 this->screen.x != screen.x ||
                 this->screen.y != screen.y;
@@ -326,7 +146,7 @@ namespace ui {
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
-        explicit FrameWindow(const char* name) : windowName(name) { }
+        explicit FrameWindow(const char* name) : windowName(name) {}
         void setProgress(float progress) {
             slider.progress = progress;
         }
@@ -411,7 +231,7 @@ namespace ui {
         const char* windowName = nullptr;
         bool windowOpened = true;
         Node root;
-    
+
     public:
         explicit FolderWindow(const char* name) : windowName(name) {}
         void open(const string& pathUTF8) {
@@ -436,9 +256,9 @@ namespace ui {
         }
         void show() {
             if (windowOpened) {
-                ImGui::Begin(windowName, &windowOpened, 
-                    ImGuiWindowFlags_NoCollapse | 
-                    ImGuiWindowFlags_NoTitleBar | 
+                ImGui::Begin(windowName, &windowOpened,
+                    ImGuiWindowFlags_NoCollapse |
+                    ImGuiWindowFlags_NoTitleBar |
                     ImGuiWindowFlags_HorizontalScrollbar);
                 showChildreen(root);
 
@@ -471,7 +291,7 @@ namespace ui {
 
             auto foldersOnTop = [](const Node& left, const Node& right) {
                 return left.folder > right.folder;
-            };
+                };
             std::stable_sort(result.begin(), result.end(), foldersOnTop);
         }
         void showChildreen(Node& node) {
@@ -479,7 +299,7 @@ namespace ui {
             if (node.opened) {
                 base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
-            
+
             node.opened = false;
             if (ImGui::TreeNodeEx(node.nameUTF8.c_str(), base_flags)) {
                 node.opened = true;
@@ -490,7 +310,8 @@ namespace ui {
                 for (auto& child : node.childreen) {
                     if (child.folder) {
                         showChildreen(child);
-                    } else {
+                    }
+                    else {
                         showFile(child);
                     }
                 }
@@ -508,9 +329,89 @@ namespace ui {
         }
     };
 }
+
+
+namespace cmd {
+    static bool openFileDialog(string& path) {
+        static bool opened = false;
+
+        if (opened) {
+            return false;
+        }
+
+        opened = true;
+        nfdchar_t* bytesUTF8 = nullptr;
+        nfdresult_t result = NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
+        if (result == NFD_OKAY) {
+            path = string(bytesUTF8);
+            NFD_Free(&bytesUTF8);
+            opened = false;
+            return true;
+        }
+        else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
+        else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
+
+        opened = false;
+        return false;
+    }
+    static bool openFolderDialog(string& path) {
+        static bool opened = false;
+
+        if (opened) {
+            return false;
+        }
+
+        opened = true;
+        nfdchar_t* bytesUTF8 = nullptr;
+        nfdresult_t result = NFD_PickFolder(nullptr, &bytesUTF8);
+        if (result == NFD_OKAY) {
+            path = string(bytesUTF8);// fs::u8path(bytesUTF8);
+            NFD_Free(&bytesUTF8);
+            opened = false;
+            return true;
+        }
+        else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
+        else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
+
+        opened = false;
+        return false;
+    }
+    static void playFile(Player* player, Frame* frame, const string& path) {
+        if (player->open(path.c_str())) {
+            const auto& info = player->info;
+            frame->create(info.width, info.height);
+            cout << "File open - ok: " << path << endl;
+        }
+        else {
+            std::cout << "File open - error" << std::endl;
+        }
+    }
+    static void openFile(Player* player, Frame* frame) {
+        string path;
+        if (openFileDialog(path)) {
+            playFile(player, frame, path);
+        }
+    }
+    static void openFolder(ui::FolderWindow* folderWindow) {
+        string path;
+        if (openFolderDialog(path)) {
+            folderWindow->open(path);
+        }
+    }
+    static void togglePause(Player* player) {
+        bool newValue = !(player->ps.paused);
+        player->pause(newValue);
+    }
+    static void seekLeft(Player* player) {
+        player->seekLeft();
+    }
+    static void seekRight(Player* player) {
+        player->seekRight();
+    }
+}
+
 /*
     Todo:
-        keyboard cmd-s
         draw (points, lines, etc...) --> show demo after this
         two frames
         play buttons
@@ -525,6 +426,98 @@ namespace ui {
         perfect would be render frames to the textures (RTT)
         and use them all in the imgui side
 */
+
+Render render;
+Player player;
+ui::MainMenuBar mainMenuBar;
+ui::FrameWindow frameWindow("frameWindow");
+ui::FolderWindow folderWindow("folderWindow");
+
+static void mouseCallback(Frame& frame, int mx, int my) {
+
+    ImGuiIO& io = ImGui::GetIO();
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        int dx = io.MouseDelta.x;
+        int dy = io.MouseDelta.y;
+        if (dx || dy) {
+            frame.cam.move(dx, -dy);
+        }
+    }
+    if (io.MouseWheel) {
+        frame.cam.zoom(io.MouseWheel * 0.1f);
+    }
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        cout << "local x = " << mx << " local y=" << my << std::endl;
+    }
+}
+static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
+    using namespace io;
+    using namespace io::keyboard;
+
+    if (ImGui::GetIO().WantCaptureKeyboard) {
+        return;
+    }
+
+    const KeyEvent& key = keyboard::save(keyCode, action, mods);
+    if (key.is(ESC)) {
+        glfwSetWindowShouldClose(window, GL_TRUE);
+    }
+    else if (key.is(R)) {
+        std::cout << "Reload shaders" << std::endl;
+        render.reloadShaders();
+    }
+    else if (key.is(SPACE)) {
+        cmd::togglePause(&player);
+    }
+    else if (key.is(LEFT)) {
+        cmd::seekLeft(&player);
+    }
+    else if (key.is(RIGHT)) {
+        cmd::seekRight(&player);
+    }
+    else if (key.is(Mod::CONTROL, O)) {
+        if (prevPressed().is(Mod::CONTROL, K)) {
+            cmd::openFolder(&folderWindow);
+            keyboard::clearPressed();
+        } else {
+            cmd::openFile(&player, &render.frames[0]);
+        }
+    }
+}
+static bool loadGLES(GLFWwindow* window) {
+    glfwMakeContextCurrent(window);
+    if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress)) {
+        std::cout << "Failed to load GLES2" << std::endl;
+        return false;
+    }
+    
+    printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
+    return true;
+}
+static void initWindow(GLFWwindow* window) {
+    glfwWindowHint(GLFW_DEPTH_BITS, 16);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
+    glfwSetKeyCallback(window, keyCallback);
+    glfwSetWindowPos(window, 400, 200);
+    glfwSwapInterval(1);
+    glfwSetTime(0.0);
+}
+static void initImGui(GLFWwindow* window) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true); // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
+    ImGui_ImplOpenGL3_Init();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromFileTTF("../../data/fonts/calibri.ttf", 14);
+    io.Fonts->Build();   
+}
+static void destroyImGui() {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+}
 
 int main(int argc, char* argv[]) {
     if (!glfwInit()) {
@@ -556,21 +549,11 @@ int main(int argc, char* argv[]) {
     render.frames[0].create(player.info.width, player.info.height);
 
 
-    ui::MainMenuBar mainMenuBar;
-    ui::FrameWindow frameWindow("frameWindow");
-    ui::FolderWindow folderWindow("folderWindow");
-
     mainMenuBar.openFile = []() {
-        string path;
-        if (openFileDialog(path)) {
-            cmd::playFile(&player, &render.frames[0], path);
-        }
+        cmd::openFile(&player, &render.frames[0]);
     };
-    mainMenuBar.openFolder = [&folderWindow]() {       
-        string path;
-        if (openFolderDialog(path)) {
-            folderWindow.open(path);
-        }
+    mainMenuBar.openFolder = []() {     
+        cmd::openFolder(&folderWindow);
     };
     mainMenuBar.quit = [&window]() {
         glfwSetWindowShouldClose(window, GL_TRUE);

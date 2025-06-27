@@ -3,125 +3,83 @@
 #include <glm/glm.hpp>
 
 
-namespace io {
-    enum class KeyMod {
-        NO = 0,
-        SHIFT = 1,
-        CTRL = 2,
-        ALT = 3,
-        ANY = 4,
+namespace io::keyboard {
+
+    enum Key {
+        ESC = GLFW_KEY_ESCAPE,
+        SPACE = GLFW_KEY_SPACE,
+        RIGHT = GLFW_KEY_RIGHT,
+        LEFT = GLFW_KEY_LEFT,
+        UP = GLFW_KEY_UP,
+        DOWN = GLFW_KEY_DOWN,
+        LEFT_SHIFT = GLFW_KEY_LEFT_SHIFT,
+        LEFT_CONTROL = GLFW_KEY_LEFT_CONTROL,
+        LEFT_ALT = GLFW_KEY_LEFT_ALT,
+        COMMA = GLFW_KEY_COMMA,
+        PERIOD = GLFW_KEY_PERIOD,
+
+        W = GLFW_KEY_W,
+        S = GLFW_KEY_S,
+        A = GLFW_KEY_A,
+        D = GLFW_KEY_D,
+        C = GLFW_KEY_C,
+        Z = GLFW_KEY_Z,
+        X = GLFW_KEY_X,
+        P = GLFW_KEY_P,
+        Q = GLFW_KEY_Q,
+        E = GLFW_KEY_E,
+        R = GLFW_KEY_R,
+        T = GLFW_KEY_T,
+        M = GLFW_KEY_M,
+        N = GLFW_KEY_N,
+        H = GLFW_KEY_H,
+        B = GLFW_KEY_B,
+        O = GLFW_KEY_O,
+        K = GLFW_KEY_K,
+
+        KEY_1 = GLFW_KEY_1,
+        KEY_2 = GLFW_KEY_2,
+        KEY_3 = GLFW_KEY_3,
+        KEY_4 = GLFW_KEY_4,
+        KEY_5 = GLFW_KEY_5,
+        KEY_6 = GLFW_KEY_6,
+        KEY_7 = GLFW_KEY_7,
+        KEY_0 = GLFW_KEY_0,
+        KP_ADD = GLFW_KEY_KP_ADD,
+        KP_SUB = GLFW_KEY_KP_SUBTRACT,
+        MINUS = GLFW_KEY_MINUS,
+        EQUAL = GLFW_KEY_EQUAL,
+        TAB = GLFW_KEY_TAB,
+        DEL = GLFW_KEY_DELETE
     };
-
-    namespace keyboard {
-        enum Key {
-            ESC = GLFW_KEY_ESCAPE,
-            SPACE = GLFW_KEY_SPACE,
-            RIGHT = GLFW_KEY_RIGHT,
-            LEFT = GLFW_KEY_LEFT,
-            UP = GLFW_KEY_UP,
-            DOWN = GLFW_KEY_DOWN,
-            LEFT_SHIFT = GLFW_KEY_LEFT_SHIFT,
-            LEFT_CONTROL = GLFW_KEY_LEFT_CONTROL,
-            LEFT_ALT = GLFW_KEY_LEFT_ALT,
-            COMMA = GLFW_KEY_COMMA,
-            PERIOD = GLFW_KEY_PERIOD,
-
-            W = GLFW_KEY_W,
-            S = GLFW_KEY_S,
-            A = GLFW_KEY_A,
-            D = GLFW_KEY_D,
-            C = GLFW_KEY_C,
-            Z = GLFW_KEY_Z,
-            X = GLFW_KEY_X,
-            P = GLFW_KEY_P,
-            Q = GLFW_KEY_Q,
-            E = GLFW_KEY_E,
-            R = GLFW_KEY_R,
-            T = GLFW_KEY_T,
-            M = GLFW_KEY_M,
-            N = GLFW_KEY_N,
-            H = GLFW_KEY_H,
-            B = GLFW_KEY_B,
-            O = GLFW_KEY_O,
-
-            KEY_1 = GLFW_KEY_1,
-            KEY_2 = GLFW_KEY_2,
-            KEY_3 = GLFW_KEY_3,
-            KEY_4 = GLFW_KEY_4,
-            KEY_5 = GLFW_KEY_5,
-            KEY_6 = GLFW_KEY_6,
-            KEY_7 = GLFW_KEY_7,
-            KEY_0 = GLFW_KEY_0,
-            KP_ADD = GLFW_KEY_KP_ADD,
-            KP_SUB = GLFW_KEY_KP_SUBTRACT,
-            MINUS = GLFW_KEY_MINUS,
-            EQUAL = GLFW_KEY_EQUAL,
-            TAB = GLFW_KEY_TAB,
-            DEL = GLFW_KEY_DELETE
-        };
-        enum Action {
-            PRESS = GLFW_PRESS,
-            REPEAT = GLFW_REPEAT,
-            RELEASE = GLFW_RELEASE
-        };
-        class KeyEvent {
-            Key key;
-            Action action;
-            //int mod;
-
-        public:
-            KeyEvent(int key, int action, int mod);
-            bool is(keyboard::Key key);
-            bool is(KeyMod mod, keyboard::Key key);
-            bool is(KeyMod mod, keyboard::Action action);
-        };
+    namespace Action {
+        static int RELEASE      = GLFW_RELEASE;
+        static int PRESS        = GLFW_PRESS;
+        static int REPEAT       = GLFW_REPEAT;
+    };
+    namespace Mod {
+        static int NO           = 0;
+        static int SHIFT        = GLFW_MOD_SHIFT;
+        static int CONTROL      = GLFW_MOD_CONTROL;
+        static int ALT          = GLFW_MOD_ALT;
+        static int SUPER        = GLFW_MOD_SUPER;
+        static int CAPS_LOCK    = GLFW_MOD_CAPS_LOCK;
+        static int NUM_LOCK     = GLFW_MOD_NUM_LOCK;
+        static int ANY          = GLFW_MOD_SHIFT | GLFW_MOD_CONTROL | GLFW_MOD_ALT;
     }
+    class KeyEvent {
+        int key;
+        int action;
+        int mod;
 
-    namespace mouse {
-        enum class Button {
-            NO = 0,
-            LEFT = 1,
-            RIGHT = 2,
-            MIDDLE = 3,
-            ANY = 4
-        };
-        enum class Action {
-            NONE,
-            PRESS,
-            RELEASE,
-            MOVE
-        };
-        struct MouseEvent {
-            Button button;
-            Action action;
-            int dx;
-            int dy;
-
-            bool is(Action action) const;
-            bool is(Action action, Button button) const;
-            bool is(Action action, Button button, KeyMod mod) const;
-            glm::ivec2 getDelta() const;
-            glm::ivec2 getCursor();
-        };
-
-        MouseEvent move(int x, int y);
-        MouseEvent click(int button, int action, int mod);
-    }
-
-    struct UIState {
-        int x, y;
-        bool keyPressed[3];
-        mouse::Button mousePressed;
-
-        bool is(KeyMod mod);
-        void print();
-        glm::ivec2 getCursor();
+    public:
+        KeyEvent();
+        KeyEvent(int key, int action, int mod);
+        bool is(Key key) const;
+        bool is(int mod, Key key) const;
     };
 
-    static UIState io_state{
-        0, 0,
-        {false, false, false},
-        mouse::Button::NO
-    };
-
+    const KeyEvent& save(int key, int action, int mod);
+    const KeyEvent& prevPressed();
+    void clearPressed();
 }
