@@ -59,18 +59,15 @@ void Frame::reshape(int left, int top, int width, int height, int screenHeight) 
 glm::vec2 Frame::toOpenGLSpace(const glm::ivec2& cursor) const {
     /*
        Converting
-       from view space x = [0, windowWidth], y = [0, windowHeight]   - coordinates from top left corner of window(!)
-       to OpenGL space x = [-1, -1], y = [1, 1]                      - coordinates from bottom left corner of view(!)
+       from view space x = [0, frameWidth], y = [0, frameHeight]	- coordinates from top left corner of view
+       to OpenGL space x = [-1, 1], y = [-1, 1]						- coordinates from bottom left corner of view
     */
-    
-    // Coordinates from [-1, -1] to [1, 1] in OpenGL space
     auto result = glm::vec2(
         ((2.0f * cursor.x) / vp.width) - 1.0,
         1.0 - ((2.0f * cursor.y) / vp.height)
     );
     return result;
 }
-
 glm::vec2 Frame::toSceneSpace(const glm::ivec2& cursor) const {
     auto point2D = toOpenGLSpace(cursor); // x=[-1, 1], y=[-1, 1]
     auto point4D = cam.pv_inverse * glm::vec4(point2D.x, point2D.y, 0.5f, 1.f);

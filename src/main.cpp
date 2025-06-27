@@ -13,162 +13,13 @@
 #include "backends/imgui_impl_opengl3.h"
 
 namespace fs = std::filesystem;
+using namespace video;
 using std::cout;
 using std::endl;
-using std::chrono::microseconds;
-using std::chrono::milliseconds;
-using std::chrono::steady_clock;
-using std::chrono::duration_cast;
-using std::function;
 using std::list;
+using std::function;
 using std::string;
-
-struct PlayState {
-    bool hold = false;      
-    bool paused = false;    
-    bool update = false;    // when paused or manual seek
-    float progress = 0.f;   // [0; 100]
-    int64_t framePts = 0;   // last seen frame pts 
-    int64_t frameDur = 0;   // last seen frame duration
-};
-
-struct PlayController {
-    StreamInfo info;
-    FrameLoader loader;
-    FrameQueue frameQ;
-    PlayState ps;
-    steady_clock::time_point lastUpdate;
-    
-    bool open(const char* fileName) {
-        frameQ.flush(loader);
-        loader.stop();
-        
-        if (loader.open(fileName, info)) {
-            loader.createFrames(10, info.width, info.height); 
-            loader.start();
-            lastUpdate = steady_clock::now();
-            ps.paused = true;
-            ps.update = true;
-            return true;
-        }
-
-        return false;
-    }
-
-    void stop() {
-        frameQ.flush(loader);
-        loader.stop();
-    }
-    
-    void seekProgress(float progress, bool hold) {
-        ps.hold = hold;
-        auto pts = info.progressToPts(progress);
-        seekPts(pts);
-    }
-
-    void seekLeft() {
-        if (ps.paused) {
-            ps.update = true;
-            frameQ.seekPrevFrame(loader);
-            frameQ.print();
-        }
-        else {
-            // minus 1 second
-            auto oneSecond = info.microsToPts(1000000);
-            auto pts = std::max(0LL, ps.framePts - oneSecond);
-            seekPts(pts);
-        }
-    }
-
-    void seekRight() {
-        if (ps.paused) {
-            ps.update = true;
-            frameQ.seekNextFrame(loader);
-            frameQ.print();
-        }
-        else {
-            // plus 1 second
-            auto oneSecond = info.microsToPts(1000000);
-            auto pts = std::min(info.durationPts, ps.framePts + oneSecond);
-            seekPts(pts);
-        }
-    }
-
-    void seekPts(int64_t pts) {
-        // flush frameQ
-        frameQ.flush(loader);
-
-        // seek && flush loader
-        loader.seek(1, pts);
-
-        // update UI
-        ps.update = true;
-        ps.framePts = pts;
-        ps.progress = info.calcProgress(pts);
-    }
-
-    void togglePause() {
-        pause(!ps.paused);
-    }
-
-    void pause(bool paused) {
-        if (paused) {
-            ps.paused = true;
-            ps.update = true;
-            frameQ.print();
-        }
-        else {
-            ps.paused = false;
-            ps.update = false;
-            frameQ.play(loader);
-        }
-    }
-
-    bool hasUpdate(const steady_clock::time_point& now) {
-        
-        frameQ.fillFrom(loader);
-        
-        if (!ps.paused && !ps.hold) {
-            auto durationMicros = duration_cast<microseconds>(now - lastUpdate).count();
-            auto durationPts = info.microsToPts(durationMicros);
-
-            if (durationPts > ps.frameDur || ps.update) {
-                const RGBFrame* frame = frameQ.next();
-                if (frame) {
-                    auto deltaPts = durationPts - ps.frameDur;
-                    if (deltaPts < frame->duration) {
-                        lastUpdate = now - microseconds(info.ptsToMicros(deltaPts));
-                    }
-                    else {
-                        lastUpdate = now;
-                    }
-
-                    ps.update = false;
-                    ps.framePts = frame->pts;
-                    ps.frameDur = frame->duration;
-                    ps.progress = info.calcProgress(frame->pts);
-                    return true;
-                }
-            }
-        }
-        else if (ps.update) {
-            const RGBFrame* frame = frameQ.curr();
-            if (frame) {
-                ps.update = false;
-                ps.framePts = frame->pts;
-                ps.frameDur = frame->duration;
-                ps.progress = info.calcProgress(frame->pts);
-                return true;
-            }
-        }
-        
-        return false;
-    }
-
-    const RGBFrame* currentFrame() {
-        return frameQ.curr();
-    }
-};
+using std::chrono::steady_clock;
 
 Render render;
 PlayController player;
@@ -256,6 +107,8 @@ static string toUTF8(const fs::path& path) {
     auto utf8 = path.u8string();
     return std::move(string(utf8.begin(), utf8.end()));
 }
+
+//menu commands
 static bool pickFileDialog(fs::path& path) {
     static bool opened = false;
 
@@ -301,6 +154,10 @@ static bool pickFolderDialog(fs::path& path) {
     return false;
 }
 
+//global commands
+static void openFile() {
+    //todo: use this
+}
 
 namespace ui {
 
@@ -334,9 +191,11 @@ namespace ui {
         bool hold = false;
     private:
         float lastProgress = 0;
-        steady_clock::time_point lastUpdate;
+        time_point lastUpdate;
     public:
         bool update(bool active) {
+            using std::chrono::milliseconds;
+
             if (!hold && active) {
                 hold = true;
                 updateValue(steady_clock::now());
@@ -497,7 +356,6 @@ namespace ui {
     };
 
     struct FolderWindow {
-    
     private:
         struct Node {
             bool folder = false;
@@ -509,11 +367,11 @@ namespace ui {
             list<Node> childreen;
         };
 
-        const char* windowName;
+        const char* windowName = nullptr;
         bool windowOpened = true;
-        
-    public:
         Node root;
+    
+    public:
         explicit FolderWindow(const char* name) : windowName(name) {}
         void open(const fs::path& path) {
             if (fs::is_directory(path)) {
@@ -729,7 +587,6 @@ int main(int argc, char* argv[]) {
         glfwPollEvents();
     }
 
-   
     player.stop();
     render.destroyFrames();
     render.destroyShaders();
