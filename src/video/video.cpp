@@ -296,6 +296,7 @@ StreamInfo VideoReader::getStreamInfo() const {
     };
 }
 
+
 FrameLoader::~FrameLoader() {
     if (t.joinable()) {
         t.join();

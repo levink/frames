@@ -148,10 +148,6 @@ void Shader::disable() const {
     }
     glUseProgram(0);
 }
-
-void Shader::setViewPort(const glm::ivec2& leftBottom, const glm::ivec2& size) {
-    glViewport(leftBottom.x, leftBottom.y, size.x, size.y);
-}
 void Shader::attr(const Attribute& attribute, const void* data, GLsizei stride, GLuint offset) {
     if (attribute.id != -1) {
         glVertexAttribPointer(

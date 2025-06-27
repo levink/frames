@@ -256,12 +256,57 @@ static string toUTF8(const fs::path& path) {
     auto utf8 = path.u8string();
     return std::move(string(utf8.begin(), utf8.end()));
 }
+static bool pickFileDialog(fs::path& path) {
+    static bool opened = false;
+
+    if (opened) {
+        return false;
+    }
+
+    opened = true;
+    nfdchar_t* bytesUTF8 = nullptr;
+    nfdresult_t result = NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
+    if (result == NFD_OKAY) {
+        path = fs::u8path(bytesUTF8);
+        NFD_Free(&bytesUTF8);
+        opened = false;
+        return true;
+    }
+    else if (result == NFD_CANCEL) {    /*cout << "nfd cancel" << endl;*/ }
+    else if (result == NFD_ERROR) {     /*cout << "nfd error" << endl;*/ }
+
+    opened = false;
+    return false;
+}
+static bool pickFolderDialog(fs::path& path) {
+    static bool opened = false;
+
+    if (opened) {
+        return false;
+    }
+
+    opened = true;
+    nfdchar_t* bytesUTF8 = nullptr;
+    nfdresult_t result = NFD_PickFolder(nullptr, &bytesUTF8);
+    if (result == NFD_OKAY) {
+        path = fs::u8path(bytesUTF8);
+        NFD_Free(&bytesUTF8);
+        opened = false;
+        return true;
+    }
+    else if (result == NFD_CANCEL) {    /*cout << "nfd cancel" << endl;*/ }
+    else if (result == NFD_ERROR) {     /*cout << "nfd error" << endl;*/ }
+
+    opened = false;
+    return false;
+}
+
 
 namespace ui {
 
     namespace dragDrop {
         constexpr static const char* PATH_TAG = "DRAG_DROP_PATH";
-        static const void* pack(const string& value) {
+        static const void* packString(const string& value) {
             return &value;
         }
         static const string* unpackString(void* data) {
@@ -344,13 +389,15 @@ namespace ui {
     };
 
     struct MainMenuBar {
-        function<void()> quitFn;
-        function<void(const char*)> openFolderFn;
+        function<void()> quit;
+        function<void()> openFile;
+        function<void()> openFolder;
         void show() {
             if (ImGui::BeginMainMenuBar())
             {
                 if (ImGui::BeginMenu("File")) {
-                    if (ImGui::MenuItem("Open Folder", "Ctrl+O")) { pickFolder(); }
+                    if (ImGui::MenuItem("Open File", "Ctrl+O")) { openFile(); }
+                    if (ImGui::MenuItem("Open Folder", "Ctrl+K Ctrl+O")) { openFolder(); }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Quit", "Alt+F4")) { quit(); }
                     ImGui::EndMenu();
@@ -365,34 +412,6 @@ namespace ui {
                     ImGui::EndMenu();
                 }
                 ImGui::EndMainMenuBar();
-            }
-        }
-    private:
-        void pickFolder() const {
-            static bool dialogOpened = false;
-            
-            if (dialogOpened) {
-                return;
-            }
-            
-            dialogOpened = true;
-                
-            nfdchar_t* selectedPath = nullptr;
-            nfdresult_t result = NFD_PickFolder(nullptr, &selectedPath);
-            if (result == NFD_OKAY) {
-                if (openFolderFn) {
-                    openFolderFn(selectedPath);
-                }
-                NFD_Free(&selectedPath);
-            }
-            else if (result == NFD_CANCEL) {    /*cout << "nfd cancel" << endl;*/ }
-            else if (result == NFD_ERROR) {     /*cout << "nfd error" << endl;*/ }
-            
-            dialogOpened = false;
-        }
-        void quit() const {
-            if (quitFn) {
-                quitFn();
             }
         }
     };
@@ -581,7 +600,7 @@ namespace ui {
         void showFile(Node& node) {
             ImGui::Selectable(node.nameUTF8.c_str());
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
-                auto data = dragDrop::pack(node.pathUTF8);
+                auto data = dragDrop::packString(node.pathUTF8);
                 ImGui::SetDragDropPayload(dragDrop::PATH_TAG, &data, sizeof(data), ImGuiCond_Once);
                 ImGui::Text(node.nameUTF8.c_str());
                 ImGui::EndDragDropSource();
@@ -591,15 +610,17 @@ namespace ui {
 }
 /*
     Todo:
+        keyboard cmd-s
         draw (points, lines, etc...) --> show demo after this
         two frames
         play buttons
+        remember opened folder
         select mode for frame(?):
             1. move/scale video
             2. draw on video
             3. playing/steps (?)
 
-        support cyrillic paths in VideoReader
+        react on opening non video files (bad format error?)
         move nfd/include to ./include dir? + move nfd to separate lib?
         perfect would be render frames to the textures (RTT)
         and use them all in the imgui side
@@ -632,19 +653,33 @@ int main(int argc, char* argv[]) {
         std::cout << "File open - error" << std::endl;
         return -1;
     }
-    render.createFrame(0, player.info.width, player.info.height);
+    render.frames[0].create(player.info.width, player.info.height);
 
 
     ui::MainMenuBar mainMenuBar;
     ui::FrameWindow frameWindow("frameWindow");
     ui::FolderWindow folderWindow("folderWindow");
 
-    mainMenuBar.quitFn = [&window]() {
-        glfwSetWindowShouldClose(window, GL_TRUE);
+    mainMenuBar.openFile = []() {
+        fs::path path;
+        if (pickFileDialog(path)) {
+            string fileName = toUTF8(path);
+            if (player.open(fileName.c_str())) {
+                cout << "File open - ok: " << fileName << endl;
+                render.frames[0].create(player.info.width, player.info.height);
+            } else {
+                std::cout << "File open - error" << std::endl;
+            }
+        }
     };
-    mainMenuBar.openFolderFn = [&folderWindow](const char* pathUTF8) {       
-        fs::path path = fs::u8path(pathUTF8);
-        folderWindow.open(path);
+    mainMenuBar.openFolder = [&folderWindow]() {       
+        fs::path path;
+        if (pickFolderDialog(path)) {
+            folderWindow.open(path);
+        }
+    };
+    mainMenuBar.quit = [&window]() {
+        glfwSetWindowShouldClose(window, GL_TRUE);
     };
     frameWindow.mouseFn = [](int mx, int my) {
         mouseCallback(render.frames[0], mx, my);
@@ -661,7 +696,7 @@ int main(int argc, char* argv[]) {
         auto str = fileName.c_str();
         if (player.open(str)) {
             cout << "File open - ok: " << fileName << endl;
-            render.createFrame(0, player.info.width, player.info.height);
+            render.frames[0].create(player.info.width, player.info.height);
         } else {
             std::cout << "File open - error" << std::endl;
         }
@@ -675,7 +710,7 @@ int main(int argc, char* argv[]) {
         auto now = steady_clock::now();
         if (player.hasUpdate(now)) { 
             const RGBFrame* rgb = player.currentFrame();
-            render.updateFrame(0, rgb->width, rgb->height, rgb->pixels);
+            render.frames[0].update(rgb->width, rgb->height, rgb->pixels);
             frameWindow.setProgress(player.ps.progress);
         }
 

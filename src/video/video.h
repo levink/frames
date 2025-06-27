@@ -7,12 +7,10 @@
 #include "frame.h"
 #include "util/circlebuffer.h"
 
-using std::mutex;
-using std::vector;
 
 class FramePool {
-    mutex mtx;
-    vector<RGBFrame*> items;
+    std::mutex mtx;
+    std::vector<RGBFrame*> items;
     int frameWidth = 0;
     int frameHeight = 0;
 
@@ -21,7 +19,7 @@ public:
     ~FramePool();
     void createFrames(size_t count, int w, int h);
     void put(RGBFrame* item);
-    void put(const vector<RGBFrame*>& frames);
+    void put(const std::vector<RGBFrame*>& frames);
     RGBFrame* get();
 };
 
@@ -89,7 +87,7 @@ class FrameLoader {
     } sharedState;
 
     RGBFrame* result = nullptr;
-    vector<RGBFrame*> prevCache;
+    std::vector<RGBFrame*> prevCache;
     int64_t lastPts = -1;
 
     void playback();
