@@ -41,6 +41,7 @@ namespace io {
         KeyEvent::KeyEvent(int key, int action, int mod) {
             this->key = (keyboard::Key)key;
             this->action = (keyboard::Action)action;
+            //this->mod = mod;
 
             if (action == keyboard::Action::PRESS) {
                 if (key == GLFW_KEY_LEFT_SHIFT)   io_state.keyPressed[0] = true;
@@ -58,15 +59,15 @@ namespace io {
                 if (key == GLFW_KEY_LEFT_ALT)     io_state.keyPressed[2] = false;
             }
         }
-        bool KeyEvent::is(keyboard::Key key) {
+        bool KeyEvent::is(Key key) {
             return is(KeyMod::NO, key);
         }
-        bool KeyEvent::is(KeyMod mod, keyboard::Key key) {
+        bool KeyEvent::is(KeyMod mod, Key key) {
             bool result =
                 this->key == key && (
                     this->action == keyboard::Action::PRESS ||
                     this->action == keyboard::Action::REPEAT
-                    ) && io_state.is(mod);
+                ) && io_state.is(mod);
             return result;
         }
         bool KeyEvent::is(KeyMod mod, keyboard::Action action) {

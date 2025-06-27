@@ -146,7 +146,7 @@ namespace video {
         int64_t frameDur = 0;   // last seen frame duration
     };
 
-    struct PlayController {
+    struct Player {
         StreamInfo info;
         FrameLoader loader;
         FrameQueue frameQ;
@@ -159,7 +159,6 @@ namespace video {
         void seekLeft();
         void seekRight();
         void seekPts(int64_t pts);
-        void togglePause();
         void pause(bool paused);
         bool hasUpdate(const time_point& now);
         const RGBFrame* currentFrame();

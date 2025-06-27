@@ -42,6 +42,7 @@ namespace io {
             N = GLFW_KEY_N,
             H = GLFW_KEY_H,
             B = GLFW_KEY_B,
+            O = GLFW_KEY_O,
 
             KEY_1 = GLFW_KEY_1,
             KEY_2 = GLFW_KEY_2,
@@ -64,8 +65,10 @@ namespace io {
             RELEASE = GLFW_RELEASE
         };
         class KeyEvent {
-            keyboard::Key key;
-            keyboard::Action action;
+            Key key;
+            Action action;
+            //int mod;
+
         public:
             KeyEvent(int key, int action, int mod);
             bool is(keyboard::Key key);

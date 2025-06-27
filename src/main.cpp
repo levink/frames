@@ -21,9 +21,88 @@ using std::function;
 using std::string;
 using std::chrono::steady_clock;
 
-Render render;
-PlayController player;
 
+//menu commands
+static bool openFileDialog(string& path) {
+    static bool opened = false;
+
+    if (opened) {
+        return false;
+    }
+
+    opened = true;
+    nfdchar_t* bytesUTF8 = nullptr;
+    nfdresult_t result = NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
+    if (result == NFD_OKAY) {
+        path = string(bytesUTF8);
+        NFD_Free(&bytesUTF8);
+        opened = false;
+        return true;
+    }
+    else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
+    else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
+
+    opened = false;
+    return false;
+}
+static bool openFolderDialog(string& path) {
+    static bool opened = false;
+
+    if (opened) {
+        return false;
+    }
+
+    opened = true;
+    nfdchar_t* bytesUTF8 = nullptr;
+    nfdresult_t result = NFD_PickFolder(nullptr, &bytesUTF8);
+    if (result == NFD_OKAY) {
+        path = string(bytesUTF8);// fs::u8path(bytesUTF8);
+        NFD_Free(&bytesUTF8);
+        opened = false;
+        return true;
+    }
+    else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
+    else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
+
+    opened = false;
+    return false;
+}
+
+//global commands
+namespace cmd {
+    static void playFile(Player* player, Frame* frame, const string& path) {
+        if (player->open(path.c_str())) {
+            const auto& info = player->info;
+            frame->create(info.width, info.height);
+            cout << "File open - ok: " << path << endl;
+        }
+        else {
+            std::cout << "File open - error" << std::endl;
+        }
+    }
+    static void openFile(Player* player, Frame* frame) {
+        string path;
+        if (openFileDialog(path)) {
+            playFile(player, frame, path);
+        }
+    }
+    static void togglePause(Player* player) {
+        bool newValue = !(player->ps.paused);
+        player->pause(newValue);
+    }
+    static void seekLeft(Player* player) {
+        player->seekLeft();
+    }
+    static void seekRight(Player* player) {
+        player->seekRight();
+    }
+}
+
+
+Render render;
+Player player;
+
+int count = 0;
 static void mouseCallback(Frame& frame, int mx, int my) {
 
     ImGuiIO& io = ImGui::GetIO();
@@ -44,14 +123,18 @@ static void mouseCallback(Frame& frame, int mx, int my) {
     }
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
+    using namespace io;
     using namespace io::keyboard;
 
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard) {
+    count++;
+    cout << keyCode << " " << action << " " << mods << endl;
+
+  /*  if (ImGui::GetIO().WantCaptureKeyboard) {
         return;
-    }
+    }*/
 
     auto key = KeyEvent(keyCode, action, mods);
+    //auto prev = io::lastKeyPressEvent();
     if (key.is(ESC)) {
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
@@ -60,13 +143,21 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        player.togglePause();
+        cmd::togglePause(&player);
     }
     else if (key.is(LEFT)) {
-        player.seekLeft();
+        cmd::seekLeft(&player);
     }
     else if (key.is(RIGHT)) {
-        player.seekRight();
+        cmd::seekRight(&player);
+    }
+    else if (key.is(KeyMod::CTRL, O)) {
+       /* if (prev.is(KeyMod::CTRL, K)) {
+            
+        }
+        else {
+            cmd::openFile(&player, &render.frames[0]);
+        }*/
     }
 }
 static bool loadGLES(GLFWwindow* window) {
@@ -108,56 +199,6 @@ static string toUTF8(const fs::path& path) {
     return std::move(string(utf8.begin(), utf8.end()));
 }
 
-//menu commands
-static bool pickFileDialog(fs::path& path) {
-    static bool opened = false;
-
-    if (opened) {
-        return false;
-    }
-
-    opened = true;
-    nfdchar_t* bytesUTF8 = nullptr;
-    nfdresult_t result = NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
-    if (result == NFD_OKAY) {
-        path = fs::u8path(bytesUTF8);
-        NFD_Free(&bytesUTF8);
-        opened = false;
-        return true;
-    }
-    else if (result == NFD_CANCEL) {    /*cout << "nfd cancel" << endl;*/ }
-    else if (result == NFD_ERROR) {     /*cout << "nfd error" << endl;*/ }
-
-    opened = false;
-    return false;
-}
-static bool pickFolderDialog(fs::path& path) {
-    static bool opened = false;
-
-    if (opened) {
-        return false;
-    }
-
-    opened = true;
-    nfdchar_t* bytesUTF8 = nullptr;
-    nfdresult_t result = NFD_PickFolder(nullptr, &bytesUTF8);
-    if (result == NFD_OKAY) {
-        path = fs::u8path(bytesUTF8);
-        NFD_Free(&bytesUTF8);
-        opened = false;
-        return true;
-    }
-    else if (result == NFD_CANCEL) {    /*cout << "nfd cancel" << endl;*/ }
-    else if (result == NFD_ERROR) {     /*cout << "nfd error" << endl;*/ }
-
-    opened = false;
-    return false;
-}
-
-//global commands
-static void openFile() {
-    //todo: use this
-}
 
 namespace ui {
 
@@ -373,7 +414,8 @@ namespace ui {
     
     public:
         explicit FolderWindow(const char* name) : windowName(name) {}
-        void open(const fs::path& path) {
+        void open(const string& pathUTF8) {
+            fs::path path = fs::u8path(pathUTF8);
             if (fs::is_directory(path)) {
                 root.folder = true;
                 root.loaded = true;
@@ -519,20 +561,14 @@ int main(int argc, char* argv[]) {
     ui::FolderWindow folderWindow("folderWindow");
 
     mainMenuBar.openFile = []() {
-        fs::path path;
-        if (pickFileDialog(path)) {
-            string fileName = toUTF8(path);
-            if (player.open(fileName.c_str())) {
-                cout << "File open - ok: " << fileName << endl;
-                render.frames[0].create(player.info.width, player.info.height);
-            } else {
-                std::cout << "File open - error" << std::endl;
-            }
+        string path;
+        if (openFileDialog(path)) {
+            cmd::playFile(&player, &render.frames[0], path);
         }
     };
     mainMenuBar.openFolder = [&folderWindow]() {       
-        fs::path path;
-        if (pickFolderDialog(path)) {
+        string path;
+        if (openFolderDialog(path)) {
             folderWindow.open(path);
         }
     };
@@ -550,17 +586,11 @@ int main(int argc, char* argv[]) {
         const auto [width, height] = vp.region;
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
-    frameWindow.acceptDropFn = [](const string& fileName) {
-        auto str = fileName.c_str();
-        if (player.open(str)) {
-            cout << "File open - ok: " << fileName << endl;
-            render.frames[0].create(player.info.width, player.info.height);
-        } else {
-            std::cout << "File open - error" << std::endl;
-        }
+    frameWindow.acceptDropFn = [](const string& path) {
+        cmd::playFile(&player, &render.frames[0], path);
     };
     
-    auto defaultPath = fs::current_path().u8string();
+    auto defaultPath = toUTF8(fs::current_path());
     folderWindow.open(defaultPath);
 
     while (!glfwWindowShouldClose(window)) {

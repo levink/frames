@@ -655,7 +655,7 @@ namespace video {
     }
 
 
-    bool PlayController::open(const char* fileName) {
+    bool Player::open(const char* fileName) {
         frameQ.flush(loader);
         loader.stop();
 
@@ -669,16 +669,16 @@ namespace video {
 
         return false;
     }
-    void PlayController::stop() {
+    void Player::stop() {
         frameQ.flush(loader);
         loader.stop();
     }
-    void PlayController::seekProgress(float progress, bool hold) {
+    void Player::seekProgress(float progress, bool hold) {
         ps.hold = hold;
         auto pts = info.progressToPts(progress);
         seekPts(pts);
     }
-    void PlayController::seekLeft() {
+    void Player::seekLeft() {
         if (ps.paused) {
             ps.update = true;
             frameQ.seekPrevFrame(loader);
@@ -691,7 +691,7 @@ namespace video {
             seekPts(pts);
         }
     }
-    void PlayController::seekRight() {
+    void Player::seekRight() {
         if (ps.paused) {
             ps.update = true;
             frameQ.seekNextFrame(loader);
@@ -704,7 +704,7 @@ namespace video {
             seekPts(pts);
         }
     }
-    void PlayController::seekPts(int64_t pts) {
+    void Player::seekPts(int64_t pts) {
         // flush frameQ
         frameQ.flush(loader);
 
@@ -716,10 +716,7 @@ namespace video {
         ps.framePts = pts;
         ps.progress = info.calcProgress(pts);
     }
-    void PlayController::togglePause() {
-        pause(!ps.paused);
-    }
-    void PlayController::pause(bool paused) {
+    void Player::pause(bool paused) {
         if (paused) {
             ps.paused = true;
             ps.update = true;
@@ -731,7 +728,7 @@ namespace video {
             frameQ.play(loader);
         }
     }
-    bool PlayController::hasUpdate(const time_point& now) {
+    bool Player::hasUpdate(const time_point& now) {
         using std::chrono::microseconds;
         using std::chrono::duration_cast;
 
@@ -773,7 +770,7 @@ namespace video {
 
         return false;
     }
-    const RGBFrame* PlayController::currentFrame() {
+    const RGBFrame* Player::currentFrame() {
         return frameQ.curr();
     }
 
