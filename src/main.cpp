@@ -491,13 +491,11 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(RIGHT)) {
         cmd::seekRight(&player);
     }
+    else if (key.is(Mod::CONTROL, K, O)) {
+        cmd::openFolder(&folderWindow);
+    }
     else if (key.is(Mod::CONTROL, O)) {
-        if (prevPressed().is(Mod::CONTROL, K)) {
-            cmd::openFolder(&folderWindow);
-            keyboard::clearPressed();
-        } else {
-            cmd::openFile(fc);
-        }
+        cmd::openFile(fc);
     }
 }
 static bool loadGLES(GLFWwindow* window) {

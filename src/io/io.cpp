@@ -6,7 +6,7 @@ namespace io::keyboard {
     KeyEvent lastPressed[2];
     KeyEvent current;
 
-    const KeyEvent& save(int key, int action, int mod) {
+    const KeyEvent& create(int key, int action, int mod) {
         current = KeyEvent(key, action, mod);
         if (action == Action::PRESS) {
             lastPressed[0] = lastPressed[1];
@@ -14,10 +14,10 @@ namespace io::keyboard {
         }
         return current;
     }
-    const KeyEvent& prevPressed() {
+    static const KeyEvent& prevPressed() {
         return lastPressed[0];
     }
-    void clearPressed() {
+    static void clearPressHistory() {
         lastPressed[0] = KeyEvent();
         lastPressed[1] = KeyEvent();
     }
@@ -43,24 +43,21 @@ namespace io::keyboard {
         }
         return (this->mod & mod);
     }
+    bool KeyEvent::is(int modPrev, Key keyPrev, Key key) const {
+        
+        if (!prevPressed().is(modPrev, keyPrev)) {
+            return false;
+        }
 
-    //bool KeyEvent::is(Mod mod, Key key) {
-        //bool result =
-        //    this->key == key && (
-        //        this->action == keyboard::Action::PRESS ||
-        //        this->action == keyboard::Action::REPEAT
-        //    ) && io_state.is(mod);
-        //return result;
-    //}
-    //bool KeyEvent::is(KeyMod mod, keyboard::Action action) {
-    //    using namespace keyboard;
-    //    bool pressed = io_state.is(mod);
-    //    if (action == Action::PRESS) {
-    //        return pressed;
-    //    }
-    //    if (action == Action::RELEASE) {
-    //        return !pressed;
-    //    }
-    //    return false;
-    //}
+        if (this->key != key) {
+            return false;
+        }
+        
+        if (action == Action::RELEASE) {
+            return false;
+        }
+
+        clearPressHistory();
+        return true;        
+    }
 }

@@ -2,9 +2,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
-
 namespace io::keyboard {
-
     enum Key {
         ESC = GLFW_KEY_ESCAPE,
         SPACE = GLFW_KEY_SPACE,
@@ -56,7 +54,7 @@ namespace io::keyboard {
         static int RELEASE      = GLFW_RELEASE;
         static int PRESS        = GLFW_PRESS;
         static int REPEAT       = GLFW_REPEAT;
-    };
+    }
     namespace Mod {
         static int NO           = 0;
         static int SHIFT        = GLFW_MOD_SHIFT;
@@ -71,15 +69,13 @@ namespace io::keyboard {
         int key;
         int action;
         int mod;
-
     public:
         KeyEvent();
         KeyEvent(int key, int action, int mod);
         bool is(Key key) const;
         bool is(int mod, Key key) const;
+        bool is(int modPrev, Key keyPrev, Key key) const;
     };
 
-    const KeyEvent& save(int key, int action, int mod);
-    const KeyEvent& prevPressed();
-    void clearPressed();
+    const KeyEvent& create(int key, int action, int mod);
 }
