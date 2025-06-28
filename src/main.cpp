@@ -474,7 +474,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         return;
     }
 
-    const KeyEvent& key = keyboard::save(keyCode, action, mods);
+    const KeyEvent& key = keyboard::create(keyCode, action, mods);
     if (key.is(ESC)) {
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
