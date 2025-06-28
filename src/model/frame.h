@@ -4,15 +4,15 @@
 #include "model/camera.h"
 #include "model/mesh.h"
 
-struct GLViewport {
+struct Viewport {
     int left    = 0;   
     int bottom  = 0; 
     int width   = 1;  
     int height  = 1;
 };
 
-struct Frame {
-    GLViewport vp;
+struct FrameRender {
+    Viewport vp;
 	Camera cam;
 	Mesh mesh;
 	GLuint textureId = 0;

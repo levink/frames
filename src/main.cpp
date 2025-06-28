@@ -117,7 +117,7 @@ namespace ui {
             {
                 if (ImGui::BeginMenu("File")) {
                     if (ImGui::MenuItem("Open File", "Ctrl+O")) { openFile(); }
-                    if (ImGui::MenuItem("Open Folder", "Ctrl+K Ctrl+O")) { openFolder(); }
+                    if (ImGui::MenuItem("Open Folder", "Ctrl+K, O")) { openFolder(); }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Quit", "Alt+F4")) { quit(); }
                     ImGui::EndMenu();
@@ -137,8 +137,9 @@ namespace ui {
     };
 
     struct FrameWindow {
-        const char* windowName;
-        bool windowOpened = true;
+        string id;
+        char name[128];
+        bool opened;
         Viewport viewPort;
         Slider slider;
         function<void(int, int)> mouseFn;
@@ -146,7 +147,13 @@ namespace ui {
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
-        explicit FrameWindow(const char* name) : windowName(name) {}
+        explicit FrameWindow(const char* id) : id(id), opened(true) {
+            setName("");
+        }
+        void setName(const char* label) {
+            memset(name, 0, sizeof(name));
+            snprintf(name, 128, "%s##%s", label, id.c_str());
+        }
         void setProgress(float progress) {
             slider.progress = progress;
         }
@@ -159,7 +166,7 @@ namespace ui {
             ImGuiWindowFlags flags =
                 ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoBackground;
-            ImGui::Begin(windowName, &windowOpened, flags);
+            ImGui::Begin(name, &opened, flags);
 
             //frame
             {
@@ -328,8 +335,13 @@ namespace ui {
             }
         }
     };
-}
 
+    struct FrameController {
+        Player& player;
+        FrameRender& render;
+        FrameWindow& window;
+    };
+}
 
 namespace cmd {
     static bool openFileDialog(string& path) {
@@ -376,20 +388,21 @@ namespace cmd {
         opened = false;
         return false;
     }
-    static void playFile(Player* player, Frame* frame, const string& path) {
-        if (player->open(path.c_str())) {
-            const auto& info = player->info;
-            frame->create(info.width, info.height);
+    static void playFile(ui::FrameController& fc, const string& path, const char* name) {
+        if (fc.player.open(path.c_str())) {
+            const auto& info = fc.player.info;
+            fc.render.create(info.width, info.height);
+            fc.window.setName(name);
             cout << "File open - ok: " << path << endl;
         }
         else {
             std::cout << "File open - error" << std::endl;
         }
     }
-    static void openFile(Player* player, Frame* frame) {
+    static void openFile(ui::FrameController& fc) {
         string path;
         if (openFileDialog(path)) {
-            playFile(player, frame, path);
+            playFile(fc, path, "test");
         }
     }
     static void openFolder(ui::FolderWindow* folderWindow) {
@@ -412,6 +425,7 @@ namespace cmd {
 
 /*
     Todo:
+        separate file for ui
         draw (points, lines, etc...) --> show demo after this
         two frames
         play buttons
@@ -430,10 +444,12 @@ namespace cmd {
 Render render;
 Player player;
 ui::MainMenuBar mainMenuBar;
-ui::FrameWindow frameWindow("frameWindow");
-ui::FolderWindow folderWindow("folderWindow");
+ui::FrameWindow frameWindow("##frameWindow");
+ui::FolderWindow folderWindow("##folderWindow");
 
-static void mouseCallback(Frame& frame, int mx, int my) {
+ui::FrameController fc { player, render.frames[0], frameWindow };
+
+static void mouseCallback(FrameRender& frame, int mx, int my) {
 
     ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -480,7 +496,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
             cmd::openFolder(&folderWindow);
             keyboard::clearPressed();
         } else {
-            cmd::openFile(&player, &render.frames[0]);
+            cmd::openFile(fc);
         }
     }
 }
@@ -540,17 +556,9 @@ int main(int argc, char* argv[]) {
     render.loadShaders();
     initWindow(window);
     initImGui(window);
-
-    const char* fileName = "C:/Users/Konst/Desktop/IMG_3504.MOV";
-    if (!player.open(fileName)) {
-        std::cout << "File open - error" << std::endl;
-        return -1;
-    }
-    render.frames[0].create(player.info.width, player.info.height);
-
-
+    
     mainMenuBar.openFile = []() {
-        cmd::openFile(&player, &render.frames[0]);
+        cmd::openFile(fc);
     };
     mainMenuBar.openFolder = []() {     
         cmd::openFolder(&folderWindow);
@@ -570,11 +578,15 @@ int main(int argc, char* argv[]) {
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
     frameWindow.acceptDropFn = [](const string& path) {
-        cmd::playFile(&player, &render.frames[0], path);
+        cmd::playFile(fc, path, "test");
     };
     
     auto defaultPath = toUTF8(fs::current_path());
     folderWindow.open(defaultPath);
+
+    auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
+    auto defaultFileName = "IMG_3504.MOV";
+    cmd::playFile(fc, defaultFilePath, defaultFileName);
 
     while (!glfwWindowShouldClose(window)) {
 

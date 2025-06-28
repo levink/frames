@@ -7,5 +7,5 @@ public:
     VideoShader();
     void enable() const override;
     void disable() const override;
-    void draw(const Frame& frame);
+    void draw(const FrameRender& frame);
 };

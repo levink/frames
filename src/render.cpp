@@ -30,15 +30,3 @@ void Render::draw() {
 	//videoShader.draw(frames[1]);
 	videoShader.disable();
 }
-void Render::move(int dx, int dy) {
-	if (selected > -1) {
-		auto& frame = frames[selected];
-		frame.cam.move(dx, -dy);
-	}
-}
-void Render::zoom(float value) {
-	if (selected > -1) {
-		auto& frame = frames[selected];
-		frame.cam.zoom(value * 0.1f);
-	}
-}

@@ -38,7 +38,7 @@ namespace gl {
 	}
 }
 
-void Frame::create(int16_t width, int16_t height) {
+void FrameRender::create(int16_t width, int16_t height) {
     if (textureId) {
         glDeleteTextures(1, &textureId);
     }
@@ -46,17 +46,17 @@ void Frame::create(int16_t width, int16_t height) {
     mesh = Mesh::createImageMesh(width, height);
     cam.init({ -width / 2, -height / 2 }, 1.f);
 }
-void Frame::update(int16_t width, int16_t height, const uint8_t* pixels) {
+void FrameRender::update(int16_t width, int16_t height, const uint8_t* pixels) {
 	gl::updateTexture(textureId, width, height, pixels);
 }
-void Frame::reshape(int left, int top, int width, int height, int screenHeight) {
+void FrameRender::reshape(int left, int top, int width, int height, int screenHeight) {
 	vp.left = left;
 	vp.bottom = screenHeight - (top + height);
 	vp.width = width;
 	vp.height = height;
     cam.reshape(width, height);
 }
-glm::vec2 Frame::toOpenGLSpace(const glm::ivec2& cursor) const {
+glm::vec2 FrameRender::toOpenGLSpace(const glm::ivec2& cursor) const {
     /*
        Converting
        from view space x = [0, frameWidth], y = [0, frameHeight]	- coordinates from top left corner of view
@@ -68,7 +68,7 @@ glm::vec2 Frame::toOpenGLSpace(const glm::ivec2& cursor) const {
     );
     return result;
 }
-glm::vec2 Frame::toSceneSpace(const glm::ivec2& cursor) const {
+glm::vec2 FrameRender::toSceneSpace(const glm::ivec2& cursor) const {
     auto point2D = toOpenGLSpace(cursor); // x=[-1, 1], y=[-1, 1]
     auto point4D = cam.pv_inverse * glm::vec4(point2D.x, point2D.y, 0.5f, 1.f);
     return glm::vec2(point4D) / point4D.w;
