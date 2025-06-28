@@ -4,8 +4,9 @@
 
 struct Render {
 	VideoShader videoShader;
+	CircleShader circleShader;
 	FrameRender frames[2];
-	void loadShaders();
+	void createShaders();
 	void reloadShaders();
 	void destroyShaders();
 	void destroyFrames();

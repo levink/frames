@@ -424,10 +424,20 @@ namespace cmd {
 
 /*
     Todo:
-        draw (points, lines, etc...) --> show demo after this
+        CircleMesh reserve more careful
+        set correct name for frame
+        change mode between move/draw/...?
+        circle for cursor under the draw frame mode
+        line shader
+        draw lines,
         two frames
+        
+        --> show demo after this
+
+        select draw color
         play buttons panel
         play one / play all 
+        how to erase drawn?
         remember opened folder
         select mode for frame(?):
             1. move/scale video
@@ -455,14 +465,14 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
         int dx = io.MouseDelta.x;
         int dy = io.MouseDelta.y;
         if (dx || dy) {
-            frame.cam.move(dx, -dy);
+            frame.move(dx, dy);
         }
     }
     if (io.MouseWheel) {
-        frame.cam.zoom(io.MouseWheel * 0.1f);
+        frame.zoom(io.MouseWheel);
     }
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        cout << "local x = " << mx << " local y=" << my << std::endl;
+        frame.addPoint(mx, my, 10.f);
     }
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
@@ -550,7 +560,7 @@ int main(int argc, char* argv[]) {
         glfwTerminate();
         return -1;
     }
-    render.loadShaders();
+    render.createShaders();
     initWindow(window);
     initImGui(window);
     

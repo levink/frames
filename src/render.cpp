@@ -2,15 +2,17 @@
 #include "resources.h"
 
 
-void Render::loadShaders() {
+void Render::createShaders() {
 	videoShader.create(resources::videoShader);
+	circleShader.create(resources::circleShader);
 }
 void Render::reloadShaders() {
-	videoShader.destroy();
-	videoShader.create(resources::videoShader);
+	destroyShaders();
+	createShaders();
 }
 void Render::destroyShaders() {
 	videoShader.destroy();
+	circleShader.destroy();
 }
 void Render::destroyFrames() {
 	for (auto& frame : frames) {
@@ -20,9 +22,18 @@ void Render::destroyFrames() {
 		}
 	}
 }
+static void setViewport(const Viewport& vp) {
+	glViewport(vp.left, vp.bottom, vp.width, vp.height);
+}
 void Render::draw() {
+
+	setViewport(frames[0].vp);
+
 	videoShader.enable();
 	videoShader.draw(frames[0]);
-	//videoShader.draw(frames[1]);
 	videoShader.disable();
+
+	circleShader.enable();
+	circleShader.draw(frames[0]);
+	circleShader.disable();
 }

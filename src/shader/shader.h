@@ -9,3 +9,11 @@ public:
     void disable() const override;
     void draw(const FrameRender& frame);
 };
+
+class CircleShader : public Shader{
+public:
+    CircleShader();
+    void enable() const override;
+    void disable() const override;
+    void draw(const FrameRender& frame);
+};

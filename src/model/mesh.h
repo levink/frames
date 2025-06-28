@@ -16,3 +16,13 @@ struct Mesh {
 
     static Mesh createImageMesh(int w, int h);
 };
+
+struct CircleMesh {
+    std::vector<glm::vec2> position;
+    std::vector<glm::vec2> center;
+    std::vector<float> radius;
+    std::vector<GLFace> face;
+
+    CircleMesh();
+    void add(int x, int y, float radius);
+};
