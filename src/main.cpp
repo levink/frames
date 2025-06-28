@@ -268,7 +268,6 @@ namespace ui {
                     ImGuiWindowFlags_NoTitleBar |
                     ImGuiWindowFlags_HorizontalScrollbar);
                 showChildreen(root);
-
                 ImGui::End();
             }
         }
@@ -425,16 +424,17 @@ namespace cmd {
 
 /*
     Todo:
-        separate file for ui
         draw (points, lines, etc...) --> show demo after this
         two frames
-        play buttons
+        play buttons panel
+        play one / play all 
         remember opened folder
         select mode for frame(?):
             1. move/scale video
             2. draw on video
             3. playing/steps (?)
 
+        separate file for ui
         react on opening non video files (bad format error?)
         move nfd/include to ./include dir? + move nfd to separate lib?
         perfect would be render frames to the textures (RTT)
@@ -446,7 +446,6 @@ Player player;
 ui::MainMenuBar mainMenuBar;
 ui::FrameWindow frameWindow("##frameWindow");
 ui::FolderWindow folderWindow("##folderWindow");
-
 ui::FrameController fc { player, render.frames[0], frameWindow };
 
 static void mouseCallback(FrameRender& frame, int mx, int my) {
@@ -483,19 +482,19 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        cmd::togglePause(&player);
+        cmd::togglePause(&fc.player);
     }
     else if (key.is(LEFT)) {
-        cmd::seekLeft(&player);
+        cmd::seekLeft(&fc.player);
     }
     else if (key.is(RIGHT)) {
-        cmd::seekRight(&player);
+        cmd::seekRight(&fc.player);
     }
     else if (key.is(Mod::CONTROL, K, O)) {
         cmd::openFolder(&folderWindow);
     }
     else if (key.is(Mod::CONTROL, O)) {
-        cmd::openFile(fc);
+        cmd::openFile(fc);  //todo: work with selected fc
     }
 }
 static bool loadGLES(GLFWwindow* window) {

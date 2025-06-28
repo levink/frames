@@ -1,16 +1,92 @@
 #include <glm/gtc/type_ptr.hpp>
+#include <string>
+#include <fstream>
+#include <iostream>
+#include <string_view>
 #include "shaderBase.h"
-#include "shader/shaderLog.h"
+#include "model/mesh.h"
 
+using std::string;
+
+struct Source {
+    string vertex;
+    string fragment;
+    Source() = default;
+    Source(string&& vertex, string&& fragment);
+    Source(Source&& right) noexcept;
+    Source(const Source& right) = delete;
+    Source& operator=(Source&& right) noexcept;
+    Source& operator=(const Source& right) = delete;
+};
+
+static void warning(std::string_view error) {
+    std::cout << "[Warning] " << error << std::endl;
+}
+static void warning(std::string_view error, std::string_view data) {
+    std::cout << "[Warning] " << error << " " << data << std::endl;
+}
+static void swap(Source& left, Source& right) {
+    std::swap(left.vertex, right.vertex);
+    std::swap(left.fragment, right.fragment);
+}
+static string getShaderText(const char* fileName) {
+    string result;
+    std::ifstream input(fileName, std::ifstream::binary);
+    if (!input) {
+        warning("Could not open file", fileName);
+        return result;
+    }
+
+    input.seekg(0, std::ios::end);
+    size_t file_length = input.tellg();
+    input.seekg(0, std::ios::beg);
+
+    char* buf = new char[file_length + 1];
+    std::streamsize readCount = 0;
+    while (readCount < file_length) {
+        input.read(buf + readCount, file_length - readCount);
+        readCount += input.gcount();
+    }
+
+    buf[file_length] = 0;
+    input.close();
+
+    result.assign(buf);
+    delete[] buf;
+
+    return std::move(result);
+}
+static Source load(const char* path) {
+    string text = getShaderText(path);
+
+    static const auto vertexTag = "//#vertex";
+    auto vertexPosition = text.find(vertexTag);
+    if (vertexPosition == string::npos) {
+        warning("Vertex tag not found in shader", path);
+        return {};
+    }
+
+    static const auto fragmentTag = "//#fragment";
+    auto fragmentPosition = text.find(fragmentTag);
+    if (fragmentPosition == string::npos) {
+        warning("Fragment tag not found in shader", path);
+        return {};
+    }
+
+    auto uniforms = text.substr(0, vertexPosition);
+    auto vertex = text.substr(0, fragmentPosition);
+    auto fragment = uniforms + text.substr(fragmentPosition);
+    return { std::move(vertex), std::move(fragment) };
+}
 static GLuint compile(GLenum shaderType, const char* shaderText) {
     if (shaderText == nullptr) {
-        std::string error;
+        string error;
         switch (shaderType) {
         case GL_VERTEX_SHADER: error = "Vertex shader text is null"; break;
         case GL_FRAGMENT_SHADER: error = "Fragment shader text is null"; break;
         default: error = "Shader text is null"; break;
         }
-        ShaderLog::warn(error);
+        warning(error);
         return 0;
     }
 
@@ -35,10 +111,10 @@ static GLuint compile(GLenum shaderType, const char* shaderText) {
         case GL_FRAGMENT_SHADER: { error = "Could not compile fragment shader"; break; }
         default: { error = "Could not compile shader"; break; }
         }
-        ShaderLog::warn(error, description.data());
+        warning(error, description.data());
     }
     else {
-        ShaderLog::warn("Could not compile shader, but info log is empty");
+        warning("Could not compile shader, but info log is empty");
     }
 
     glDeleteShader(shader);
@@ -46,7 +122,7 @@ static GLuint compile(GLenum shaderType, const char* shaderText) {
 }
 static GLuint link(GLuint vertexShader, GLuint fragmentShader) {
     if (!vertexShader || !fragmentShader) {
-        ShaderLog::warn("Can't link shader because of empty parts");
+        warning("Can't link shader because of empty parts");
         return 0;
     }
 
@@ -67,10 +143,10 @@ static GLuint link(GLuint vertexShader, GLuint fragmentShader) {
     if (length) {
         std::vector<GLchar> info(length);
         glGetProgramInfoLog(program, length, &length, info.data());
-        ShaderLog::warn("Could not link program", info.data());
+        warning("Could not link program", info.data());
     }
     else {
-        ShaderLog::warn("Could not link shader, but info log is empty");
+        warning("Could not link shader, but info log is empty");
     }
 
     glDetachShader(program, vertexShader);
@@ -80,17 +156,33 @@ static GLuint link(GLuint vertexShader, GLuint fragmentShader) {
     glDeleteProgram(program);
     return 0;
 }
-static GLuint build(const ShaderSource& source) {
-    GLuint vertexShader = compile(GL_VERTEX_SHADER, source.vertex.c_str());
-    GLuint fragmentShader = compile(GL_FRAGMENT_SHADER, source.fragment.c_str());
+static GLuint build(const char* path) {
+    Source shaderSource = load(path);
+    GLuint vertexShader = compile(GL_VERTEX_SHADER, shaderSource.vertex.c_str());
+    GLuint fragmentShader = compile(GL_FRAGMENT_SHADER, shaderSource.fragment.c_str());
     GLuint programId = link(vertexShader, fragmentShader);
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
     return programId;
 }
 
+Source::Source(string&& vertex, string&& fragment) : 
+    vertex(vertex), 
+    fragment(fragment) { }
+Source::Source(Source&& right) noexcept : Source() {
+    swap(*this, right);
+}
+Source& Source::operator=(Source&& right) noexcept {
+    if (this == &right) {
+        return *this;
+    }
+
+    swap(*this, right);
+    return *this;
+}
+
 Attribute::Attribute() : id(-1), size(-1), type(GL_NONE) {}
-Attribute::Attribute(GLSLType type, std::string name) :
+Attribute::Attribute(GLSLType type, string name) :
     id(-1),
     size(type.size),
     type(type.type),
@@ -98,7 +190,7 @@ Attribute::Attribute(GLSLType type, std::string name) :
 }
 
 Uniform::Uniform() : id(-1) {}
-Uniform::Uniform(std::string name) :
+Uniform::Uniform(string name) :
     id(-1),
     name(std::move(name)) {
 }
@@ -111,8 +203,9 @@ Shader::Shader(uint8_t uniforms, uint8_t attributes) :
 Shader::~Shader() {
     destroy();
 }
-void Shader::create(const ShaderSource& source) {
-    programId = build(source);
+void Shader::create(const char* path) {
+
+    programId = build(path);
     if (programId == 0) {
         return;
     }

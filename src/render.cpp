@@ -1,17 +1,13 @@
 #include "render.h"
-#include <iostream>
+#include "resources.h"
 
 
 void Render::loadShaders() {
-	ShaderSource source;
-	source.load(shader_path::video);
-	videoShader.create(source);
+	videoShader.create(resources::videoShader);
 }
 void Render::reloadShaders() {
-	ShaderSource source;
-	source.load(shader_path::video);
 	videoShader.destroy();
-	videoShader.create(source);
+	videoShader.create(resources::videoShader);
 }
 void Render::destroyShaders() {
 	videoShader.destroy();

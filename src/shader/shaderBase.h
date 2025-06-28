@@ -2,8 +2,9 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
-#include "shaderSource.h"
-#include "model/mesh.h"
+#include <string>
+
+struct GLFace; //forward
 
 struct GLSLType {
     GLint size;
@@ -51,10 +52,8 @@ public:
     Shader(uint8_t uniforms, uint8_t attributes);
     virtual ~Shader();
 
-    void create(const ShaderSource& source);
+    void create(const char* path);
     void destroy();
     virtual void enable() const;
     virtual void disable() const;
 };
-
-
