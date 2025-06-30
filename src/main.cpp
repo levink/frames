@@ -427,7 +427,7 @@ namespace cmd {
 
         set correct name for frame
         change mode between move/draw/...?
-        circle for cursor under the draw frame mode
+        circle for cursor under the draw mode
         two frames
         
         --> show demo after this
@@ -474,7 +474,7 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
         static bool draw = false;
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             draw = true;
-            frame.newLine(mx, my, 5.f);
+            frame.newLine(mx, my, 50.f);
         } 
         else if (draw && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
             if (io.MouseDelta.x || io.MouseDelta.y) {

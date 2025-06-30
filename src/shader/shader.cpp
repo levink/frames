@@ -58,7 +58,7 @@ void LinesShader::draw(const FrameRender& frame) {
     set4(u[0], frame.cam.proj);
     set4(u[1], frame.cam.view);
 
-    for (const auto& line : frame.lines) {
+    for (const Line& line : frame.lines) {
         const auto& vertex = line.mesh.vertex.data();
         attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
         attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, start));

@@ -38,10 +38,11 @@ float getDistance(vec2 start, vec2 end, vec2 point) {
     return distance(point, proj);
 }
 void main() {
-    float inner = Radius - 1.5;
+    float inner = Radius - 2.0;
     float outer = Radius;
     float dist = getDistance(LineStart, LineEnd, Position);
-    float alpha = 0.7 * smoothstep(outer, inner, dist);
+    float alpha = smoothstep(outer, inner, dist);
+    // alpha = 1.0;
     gl_FragColor = vec4(1.0, 1.0, 0.4, alpha);
 }
 

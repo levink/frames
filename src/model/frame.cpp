@@ -84,11 +84,11 @@ void FrameRender::draw(ShaderContext& shaders) const {
 	shaders.lines.draw(*this);
 	shaders.lines.disable();
 
-	shaders.point.enable();
+	/*shaders.point.enable();
 	for (const auto& line : lines) {
 		shaders.point.draw(cam, line.points);
 	}
-	shaders.point.disable();
+	shaders.point.disable();*/
 }
 
 glm::vec2 FrameRender::toOpenGLSpace(int x, int y) const {
@@ -111,27 +111,27 @@ glm::vec2 FrameRender::toSceneSpace(int x, int y) const {
 
 
 Line::Line(float width) : width(width), radius(0.5f * width) { }
-
-void Line::addPoint(const glm::vec2& point) {
+void Line::addPoint(glm::vec2 point) {
 	size_t capacity = points.empty() ? 4 : 1000;
 	points.reserve(capacity);
 
 	if (points.empty()) {
 		points.emplace_back(point);
 		mesh.addQuad(point, radius);
-		cout << "addPoint" << endl;
 		return;
 	}
 
-	if (math::distance2(points.back(), point) < radius * radius) {
+	if (math::distance2(points.back(), point) < 0.5 * radius * radius) {
 		return;
 	}
 
-	points.emplace_back(point);
-	if (points.size() == 2) {
+	if (points.size() == 1) {
+		points.emplace_back(point);
 		const auto& p0 = points[0];
 		const auto& p1 = points[1];
-		const auto dir = radius * glm::normalize(p1 - p0);
+
+		drawDir = glm::normalize(p1 - p0);
+		const auto dir = radius * drawDir;
 		const auto n = glm::vec2(-dir.y, dir.x);
 	
 		mesh.vertex[0] = LineVertex{ p0 - dir - n, p0, p1, radius };
@@ -142,12 +142,31 @@ void Line::addPoint(const glm::vec2& point) {
 		return;
 	}
 
+	{
+		//make smooth line
+		const auto& back = points.back();
+		const auto dist = glm::length(point - back);
+		const auto pointDir = glm::normalize(point - back);
+		auto cos = glm::dot(pointDir, drawDir);
+		if (cos < 0.75f) {
+			points.emplace_back(back);
+			mesh.addQuad(back, radius);
+			drawDir = pointDir;
+		}
+		else {
+			constexpr float K = 0.5;
+			drawDir = K * drawDir + (1.f - K) * pointDir;
+			point = back + dist * drawDir;
+		}
+	}
+	
+	points.emplace_back(point);
 	const auto& p0 = points[points.size() - 3];
 	const auto& p1 = points[points.size() - 2];
 	const auto& p2 = points[points.size() - 1];
+
 	const auto dir1 = radius * glm::normalize(p2 - p0);
 	const auto n1 = glm::vec2(-dir1.y, dir1.x);
-
 	auto& vertex = mesh.vertex;
 	auto& prev1 = vertex[vertex.size() - 2];
 	auto& prev2 = vertex[vertex.size() - 1];
@@ -182,4 +201,3 @@ void FrameRender::addPoint(int x, int y) {
 	auto& line = lines.back();
 	line.addPoint(point);
 }
-

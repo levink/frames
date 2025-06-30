@@ -17,10 +17,11 @@ struct Viewport {
 struct Line {
     float width;
     float radius;
+    glm::vec2 drawDir;
     std::vector<glm::vec2> points;
     LineMesh mesh;
     explicit Line(float width);
-    void addPoint(const glm::vec2& point);
+    void addPoint(glm::vec2 point);
 };
 
 struct FrameRender {
