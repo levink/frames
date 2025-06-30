@@ -10,10 +10,24 @@ public:
     void draw(const FrameRender& frame);
 };
 
-class CircleShader : public Shader{
+class LinesShader : public Shader {
 public:
-    CircleShader();
+    LinesShader();
     void enable() const override;
     void disable() const override;
     void draw(const FrameRender& frame);
+};
+
+class PointShader : public Shader {
+public:
+    PointShader();
+    void enable() const override;
+    void disable() const override;
+    void draw(const Camera& cam, const std::vector<glm::vec2>& points);
+};
+
+struct ShaderContext {
+    VideoShader video;
+    LinesShader lines;
+    PointShader point;
 };

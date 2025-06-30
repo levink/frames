@@ -3,8 +3,7 @@
 #include "shader/shader.h"
 
 struct Render {
-	VideoShader videoShader;
-	CircleShader circleShader;
+	ShaderContext shaders;
 	FrameRender frames[2];
 	void createShaders();
 	void reloadShaders();

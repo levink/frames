@@ -27,11 +27,12 @@ add_executable(app
 	src/shader/shader.cpp
 	src/shader/shaderBase.cpp
 	src/util/fs.cpp
+	src/util/math.cpp
 	src/video/frame.cpp
 	src/video/video.cpp
 	src/main.cpp
 	src/render.cpp
- )
+)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/include/ffmpeg/)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/lib/imgui/)

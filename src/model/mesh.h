@@ -1,4 +1,5 @@
 #pragma once
+#include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <vector>
@@ -9,20 +10,23 @@ struct GLFace {
     uint16_t c = 0;
 };
 
-struct Mesh {
+struct ImageMesh {
     std::vector<glm::vec2> position;
     std::vector<glm::vec2> texture;
     std::vector<GLFace> face;
-
-    static Mesh createImageMesh(int w, int h);
+    static ImageMesh createImageMesh(int w, int h);
 };
 
-struct CircleMesh {
-    std::vector<glm::vec2> position;
-    std::vector<glm::vec2> center;
-    std::vector<float> radius;
-    std::vector<GLFace> face;
+struct LineVertex {
+    glm::vec2 position;
+    glm::vec2 start;
+    glm::vec2 end;
+    float radius;
+};
 
-    CircleMesh();
-    void add(int x, int y, float radius);
+struct LineMesh {
+    std::vector<LineVertex> vertex;
+    std::vector<GLFace> face;
+    LineMesh();
+    void addPoint(int x, int y, float r);
 };

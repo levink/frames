@@ -3,16 +3,18 @@
 
 
 void Render::createShaders() {
-	videoShader.create(resources::videoShader);
-	circleShader.create(resources::circleShader);
+	shaders.video.create(resources::videoShader);
+	shaders.lines.create(resources::linesShader);
+	shaders.point.create(resources::pointShader);
 }
 void Render::reloadShaders() {
 	destroyShaders();
 	createShaders();
 }
 void Render::destroyShaders() {
-	videoShader.destroy();
-	circleShader.destroy();
+	shaders.video.destroy();
+	shaders.lines.destroy();
+	shaders.point.destroy();
 }
 void Render::destroyFrames() {
 	for (auto& frame : frames) {
@@ -22,18 +24,6 @@ void Render::destroyFrames() {
 		}
 	}
 }
-static void setViewport(const Viewport& vp) {
-	glViewport(vp.left, vp.bottom, vp.width, vp.height);
-}
 void Render::draw() {
-
-	setViewport(frames[0].vp);
-
-	videoShader.enable();
-	videoShader.draw(frames[0]);
-	videoShader.disable();
-
-	circleShader.enable();
-	circleShader.draw(frames[0]);
-	circleShader.disable();
+	frames[0].draw(shaders);
 }

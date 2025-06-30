@@ -424,7 +424,7 @@ namespace cmd {
 
 /*
     Todo:
-        CircleMesh reserve more careful
+        LineMesh reserve more careful
         set correct name for frame
         change mode between move/draw/...?
         circle for cursor under the draw frame mode
@@ -459,7 +459,6 @@ ui::FolderWindow folderWindow("##folderWindow");
 ui::FrameController fc { player, render.frames[0], frameWindow };
 
 static void mouseCallback(FrameRender& frame, int mx, int my) {
-
     ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         int dx = io.MouseDelta.x;
@@ -468,11 +467,19 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
             frame.move(dx, dy);
         }
     }
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+        int dx = io.MouseDelta.x;
+        int dy = io.MouseDelta.y;
+        if (dx || dy) {
+            frame.addSegmentPoint(mx, my, 5.f);
+        }
+    }
     if (io.MouseWheel) {
         frame.zoom(io.MouseWheel);
     }
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        frame.addPoint(mx, my, 10.f);
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        //frame.addPoint(mx, my, 10.f);
+        //frame.addSegmentPoint(mx, my, 50.f);
     }
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
