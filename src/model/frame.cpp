@@ -4,6 +4,7 @@
 #include "util/math.h"
 
 using std::cout;
+using std::endl;
 
 namespace gl {
 	static GLuint createTexture(int16_t width, int16_t height) {
@@ -84,7 +85,9 @@ void FrameRender::draw(ShaderContext& shaders) const {
 	shaders.lines.disable();
 
 	shaders.point.enable();
-	shaders.point.draw(cam, line.controlPoints);
+	for (const auto& line : lines) {
+		shaders.point.draw(cam, line.points);
+	}
 	shaders.point.disable();
 }
 
@@ -105,72 +108,60 @@ glm::vec2 FrameRender::toSceneSpace(int x, int y) const {
     auto point4D = cam.pv_inverse * glm::vec4(point2D.x, point2D.y, 0.5f, 1.f);
 	return { point4D.x / point4D.w, point4D.y / point4D.w };
 }
-void FrameRender::addPoint(int x, int y, float r) {
-	auto scene = toSceneSpace(x, y);
-	//lineMesh.addPoint(scene.x, scene.y, r);
-	cout << "addPoint x = " << scene.x << " y=" << scene.y << std::endl;
-}
-void FrameRender::addSegmentPoint(int mx, int my, float r) {
-	auto point = toSceneSpace(mx, my);
-	line.controlPoints.reserve(1000);
-	if (line.controlPoints.size() > 1000) {
-		return;
-	}
 
-	auto& points = line.controlPoints;
+
+Line::Line(float width) : width(width), radius(0.5f * width) { }
+
+void Line::addPoint(const glm::vec2& point) {
+	size_t capacity = points.empty() ? 4 : 1000;
+	points.reserve(capacity);
+
 	if (points.empty()) {
 		points.emplace_back(point);
+		mesh.addQuad(point, radius);
+		cout << "addPoint" << endl;
 		return;
 	}
 
-	float d2 = math::dist2(points.back(), point);
-	if (d2 < 4 * r * r) {
+	if (math::distance2(points.back(), point) < radius * radius) {
 		return;
 	}
 
 	points.emplace_back(point);
 	if (points.size() == 2) {
-		const auto& p0 = points[points.size() - 2];
-		const auto& p1 = points[points.size() - 1];
-		const auto dir = glm::normalize(p1 - p0);
-		const auto n = r * glm::vec2(-dir.y, dir.x);
+		const auto& p0 = points[0];
+		const auto& p1 = points[1];
+		const auto dir = radius * glm::normalize(p1 - p0);
+		const auto n = glm::vec2(-dir.y, dir.x);
+	
+		mesh.vertex[0] = LineVertex{ p0 - dir - n, p0, p1, radius };
+		mesh.vertex[1] = LineVertex{ p0 - dir + n, p0, p1, radius };
+		mesh.vertex[2] = LineVertex{ p1 + dir - n, p0, p1, radius };
+		mesh.vertex[3] = LineVertex{ p1 + dir + n, p0, p1, radius };
 
-		auto& vertex = line.mesh.vertex;
-		vertex.emplace_back(LineVertex{ p0 - n, p0, p1, r });
-		vertex.emplace_back(LineVertex{ p0 + n, p0, p1, r });
-		vertex.emplace_back(LineVertex{ p1 - n, p0, p1, r });
-		vertex.emplace_back(LineVertex{ p1 + n, p0, p1, r });
-
-		auto& face = line.mesh.face;
-		const uint16_t i0 = vertex.size() - 4;
-		const uint16_t i1 = i0 + 1;
-		const uint16_t i2 = i0 + 2;
-		const uint16_t i3 = i0 + 3;
-		face.emplace_back(i0, i1, i2);
-		face.emplace_back(i2, i1, i3);
 		return;
 	}
 
 	const auto& p0 = points[points.size() - 3];
 	const auto& p1 = points[points.size() - 2];
 	const auto& p2 = points[points.size() - 1];
-	const auto dir1 = glm::normalize(p2 - p0);
+	const auto dir1 = radius * glm::normalize(p2 - p0);
 	const auto n1 = glm::vec2(-dir1.y, dir1.x);
 
-	auto& vertex = line.mesh.vertex;
+	auto& vertex = mesh.vertex;
 	auto& prev1 = vertex[vertex.size() - 2];
 	auto& prev2 = vertex[vertex.size() - 1];
-	prev1.position = prev1.end - prev1.radius * n1;
-	prev2.position = prev2.end + prev2.radius * n1;
+	prev1.position = prev1.end - n1;
+	prev2.position = prev2.end + n1;
 
-	const auto dir2 = glm::normalize(p2 - p1);
+	const auto dir2 = radius * glm::normalize(p2 - p1);
 	const auto n2 = glm::vec2(-dir2.y, dir2.x);
-	vertex.emplace_back(LineVertex{ p1 - n1 * r, p1, p2, r });
-	vertex.emplace_back(LineVertex{ p1 + n1 * r, p1, p2, r });
-	vertex.emplace_back(LineVertex{ p2 - n2 * r, p1, p2, r });
-	vertex.emplace_back(LineVertex{ p2 + n2 * r, p1, p2, r });
-	
-	auto& face = line.mesh.face;
+	vertex.emplace_back(LineVertex{ p1 - n1,		p1, p2, radius });
+	vertex.emplace_back(LineVertex{ p1 + n1,		p1, p2, radius });
+	vertex.emplace_back(LineVertex{ p2 - n2 + dir2, p1, p2, radius });
+	vertex.emplace_back(LineVertex{ p2 + n2 + dir2, p1, p2, radius });
+
+	auto& face = mesh.face;
 	const uint16_t i0 = vertex.size() - 4;
 	const uint16_t i1 = i0 + 1;
 	const uint16_t i2 = i0 + 2;
@@ -178,3 +169,17 @@ void FrameRender::addSegmentPoint(int mx, int my, float r) {
 	face.emplace_back(i0, i1, i2);
 	face.emplace_back(i2, i1, i3);
 }
+void FrameRender::newLine(int x, int y, float width) {
+	auto point = toSceneSpace(x, y);
+	auto& line = lines.emplace_back(width);
+	line.addPoint(point);
+}
+void FrameRender::addPoint(int x, int y) {
+	if (lines.empty()) {
+		return;
+	}
+	auto point = toSceneSpace(x, y);
+	auto& line = lines.back();
+	line.addPoint(point);
+}
+

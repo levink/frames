@@ -36,23 +36,23 @@ LineMesh::LineMesh() {
     vertex.reserve(LINE_SIZE_MAX);
     face.reserve(LINE_FACE_MAX);
 }
-void LineMesh::addPoint(int x, int y, float r) {
+void LineMesh::addQuad(const glm::vec2& center, float r) {
     if (vertex.size() >= LINE_SIZE_MAX) {
         return;
     }
 
-    vec2 p0 = { x, y };
-    vec2 p1 = { x, y };
-    vertex.emplace_back(LineVertex{ { x - r, y - r }, p0, p1, r });
-    vertex.emplace_back(LineVertex{ { x - r, y + r }, p0, p1, r });
-    vertex.emplace_back(LineVertex{ { x + r, y + r }, p0, p1, r });
-    vertex.emplace_back(LineVertex{ { x + r, y - r }, p0, p1, r });
+    const float& x = center.x;
+    const float& y = center.y;
+    vertex.emplace_back(LineVertex{ { x - r, y - r }, center, center, r });
+    vertex.emplace_back(LineVertex{ { x - r, y + r }, center, center, r });
+    vertex.emplace_back(LineVertex{ { x + r, y - r }, center, center, r });
+    vertex.emplace_back(LineVertex{ { x + r, y + r }, center, center, r });
 
     const uint16_t i0 = vertex.size() - 4;
     const uint16_t i1 = i0 + 1;
     const uint16_t i2 = i0 + 2;
     const uint16_t i3 = i0 + 3;
     face.emplace_back(i0, i1, i2);
-    face.emplace_back(i2, i3, i0);
+    face.emplace_back(i2, i1, i3);
 }
 

@@ -10,12 +10,12 @@ VideoShader::VideoShader() : Shader(3, 2) {
 void VideoShader::enable() const {
     Shader::enable();
     glEnable(GL_TEXTURE_2D);
-    glEnable(GL_DEPTH_TEST);
+    //glEnable(GL_DEPTH_TEST);
 }
 void VideoShader::disable() const {
     Shader::disable();
     glDisable(GL_TEXTURE_2D);
-    glDisable(GL_DEPTH_TEST);
+    //glDisable(GL_DEPTH_TEST);
 }
 void VideoShader::draw(const FrameRender& frame) {
     if (!frame.textureReady) {
@@ -58,18 +58,20 @@ void LinesShader::draw(const FrameRender& frame) {
     set4(u[0], frame.cam.proj);
     set4(u[1], frame.cam.view);
 
-    const auto& vertex = frame.line.mesh.vertex.data();
-    attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
-    attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, start));
-    attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, end));
-    attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
-    //attr(a[4], vertex, sizeof(LineVertex), offsetof(LineVertex, color));
+    for (const auto& line : frame.lines) {
+        const auto& vertex = line.mesh.vertex.data();
+        attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
+        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, start));
+        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, end));
+        attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
+        //attr(a[4], vertex, sizeof(LineVertex), offsetof(LineVertex, color));
 
-    const auto& faces = frame.line.mesh.face;
-    drawFaces(faces);
+        const auto& face = line.mesh.face;
+        drawFaces(face);
 
-    /*glDrawArrays(GL_LINE_STRIP, 0, frame.lineMesh.vertex.size());
-    glDrawElements(GL_LINE_STRIP, static_cast<int>(faces.size() * 3u), GL_UNSIGNED_SHORT, faces.data());*/
+        /*glDrawArrays(GL_LINE_STRIP, 0, frame.lineMesh.vertex.size());
+        glDrawElements(GL_LINE_STRIP, static_cast<int>(faces.size() * 3u), GL_UNSIGNED_SHORT, faces.data());*/
+    }
 }
 
 

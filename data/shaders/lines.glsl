@@ -41,7 +41,7 @@ void main() {
     float inner = Radius - 1.5;
     float outer = Radius;
     float dist = getDistance(LineStart, LineEnd, Position);
-    float alpha = 0.5 * smoothstep(outer, inner, dist);
+    float alpha = 0.7 * smoothstep(outer, inner, dist);
     gl_FragColor = vec4(1.0, 1.0, 0.4, alpha);
 }
 

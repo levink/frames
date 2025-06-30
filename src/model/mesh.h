@@ -28,5 +28,5 @@ struct LineMesh {
     std::vector<LineVertex> vertex;
     std::vector<GLFace> face;
     LineMesh();
-    void addPoint(int x, int y, float r);
+    void addQuad(const glm::vec2& center, float radius);
 };
