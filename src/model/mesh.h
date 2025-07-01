@@ -19,8 +19,8 @@ struct ImageMesh {
 
 struct LineVertex {
     glm::vec2 position;
-    glm::vec2 start;
-    glm::vec2 end;
+    glm::vec2 segmentStart;
+    glm::vec2 segmentEnd;
     float radius;
 };
 

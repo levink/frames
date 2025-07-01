@@ -8,3 +8,9 @@ float math::distance2(const vec2& left, const vec2& right) {
     const float dy = left.y - right.y;
     return dx * dx + dy * dy;
 }
+
+float math::distanceL1(const glm::vec2& left, const glm::vec2& right) {
+    const float dx = abs(left.x - right.x);
+    const float dy = abs(left.y - right.y);
+    return dx + dy;
+}

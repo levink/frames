@@ -472,9 +472,10 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
 
     {
         static bool draw = false;
+        static float radius = 100.f;
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             draw = true;
-            frame.newLine(mx, my, 50.f);
+            frame.newLine(mx, my, radius);
         } 
         else if (draw && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
             if (io.MouseDelta.x || io.MouseDelta.y) {

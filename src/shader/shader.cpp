@@ -61,8 +61,8 @@ void LinesShader::draw(const FrameRender& frame) {
     for (const Line& line : frame.lines) {
         const auto& vertex = line.mesh.vertex.data();
         attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
-        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, start));
-        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, end));
+        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentStart));
+        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentEnd));
         attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
         //attr(a[4], vertex, sizeof(LineVertex), offsetof(LineVertex, color));
 

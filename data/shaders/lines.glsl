@@ -17,8 +17,8 @@ attribute float in_Radius;
 attribute vec3 in_Color;
 
 void main() {
-    gl_Position = Proj * View * vec4(in_Position, 1.0, 1.0);
-    Position = in_Position;
+    gl_Position = Proj * View * vec4(in_Position, 0.0, 1.0);
+    Position = in_Position; 
 	LineStart = in_LineStart;
     LineEnd = in_LineEnd;
 	Radius = in_Radius;
@@ -38,11 +38,11 @@ float getDistance(vec2 start, vec2 end, vec2 point) {
     return distance(point, proj);
 }
 void main() {
-    float inner = Radius - 2.0;
+    float inner = Radius - 3.5;
     float outer = Radius;
     float dist = getDistance(LineStart, LineEnd, Position);
+    // float alpha = 0.5;
     float alpha = smoothstep(outer, inner, dist);
-    // alpha = 1.0;
     gl_FragColor = vec4(1.0, 1.0, 0.4, alpha);
 }
 

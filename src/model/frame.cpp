@@ -77,18 +77,18 @@ void FrameRender::draw(ShaderContext& shaders) const {
 	gl::setViewport(vp);
 
 	shaders.video.enable();
-	shaders.video.draw(*this);
+	shaders.video.draw(*this); //todo: render()?
 	shaders.video.disable();
 
 	shaders.lines.enable();
-	shaders.lines.draw(*this);
+	shaders.lines.draw(*this); //todo: render()?
 	shaders.lines.disable();
 
-	/*shaders.point.enable();
-	for (const auto& line : lines) {
-		shaders.point.draw(cam, line.points);
-	}
-	shaders.point.disable();*/
+	//shaders.point.enable();
+	//for (const auto& line : lines) {
+	//	shaders.point.draw(cam, line.points); //todo: render()?
+	//}
+	//shaders.point.disable();
 }
 
 glm::vec2 FrameRender::toOpenGLSpace(int x, int y) const {
@@ -109,76 +109,91 @@ glm::vec2 FrameRender::toSceneSpace(int x, int y) const {
 	return { point4D.x / point4D.w, point4D.y / point4D.w };
 }
 
+//void Line::addNextPoint(const glm::vec2& position) {
+//	points.emplace_back(position);
+//	const auto& p0 = points[points.size() - 3];
+//	const auto& p1 = points[points.size() - 2];
+//	const auto& p2 = points[points.size() - 1];
+//
+//	const auto dir1 = radius * glm::normalize(p2 - p0);
+//	const auto n1 = glm::vec2(-dir1.y, dir1.x);
+//	auto& vertex = mesh.vertex;
+//	auto& prev1 = vertex[vertex.size() - 2];
+//	auto& prev2 = vertex[vertex.size() - 1];
+//	prev1.position = prev1.end - n1;
+//	prev2.position = prev2.end + n1;
+//
+//	const auto dir2 = radius * glm::normalize(p2 - p1);
+//	const auto n2 = glm::vec2(-dir2.y, dir2.x);
+//	vertex.emplace_back(LineVertex{ p1 - n1,		p1, p2, radius });
+//	vertex.emplace_back(LineVertex{ p1 + n1,		p1, p2, radius });
+//	vertex.emplace_back(LineVertex{ p2 - n2 + dir2, p1, p2, radius });
+//	vertex.emplace_back(LineVertex{ p2 + n2 + dir2, p1, p2, radius });
+//
+//	auto& face = mesh.face;
+//	const uint16_t i0 = vertex.size() - 4;
+//	const uint16_t i1 = i0 + 1;
+//	const uint16_t i2 = i0 + 2;
+//	const uint16_t i3 = i0 + 3;
+//	face.emplace_back(i0, i1, i2);
+//	face.emplace_back(i2, i1, i3);
+//}
 
 Line::Line(float width) : width(width), radius(0.5f * width) { }
-void Line::addPoint(glm::vec2 point) {
-	size_t capacity = points.empty() ? 4 : 1000;
-	points.reserve(capacity);
+void Line::moveLastPoint(const glm::vec2& position) {
 
-	if (points.empty()) {
-		points.emplace_back(point);
-		mesh.addQuad(point, radius);
-		return;
+	points.back() = position;
+	const auto& p0 = points[points.size() - 2];
+	const auto& p1 = points[points.size() - 1];
+
+	auto index0 = mesh.vertex.size() - 4;
+	auto& v0 = mesh.vertex[index0];
+	auto& v1 = mesh.vertex[index0 + 1];
+	auto& v2 = mesh.vertex[index0 + 2];
+	auto& v3 = mesh.vertex[index0 + 3];
+	if (math::distanceL1(p0, p1) < 2.f) {
+		v2 = LineVertex{ p0 + (v1.segmentStart - v1.position), p0, p0, radius };
+		v3 = LineVertex{ p0 + (v0.segmentStart - v0.position), p0, p0, radius };
 	}
-
-	if (math::distance2(points.back(), point) < 0.5 * radius * radius) {
-		return;
+	else if (points.size() == 2) {
+		auto dir = glm::normalize(p1 - p0);
+		auto norm = glm::vec2(-dir.y, dir.x);
+		v0 = LineVertex{ p0 + radius * (-dir - norm), p0, p1, radius };
+		v1 = LineVertex{ p0 + radius * (-dir + norm), p0, p1, radius };
+		v2 = LineVertex{ p1 + radius * (dir - norm), p0, p1, radius };
+		v3 = LineVertex{ p1 + radius * (dir + norm), p0, p1, radius };
 	}
+	else {
+		auto dir = glm::normalize(p1 - p0);
+		auto norm = glm::vec2(-dir.y, dir.x);
+		v0 = LineVertex{ p0 - radius * norm, p0, p1, radius }; //without dir offset
+		v1 = LineVertex{ p0 + radius * norm, p0, p1, radius }; //without dir offset
+		v2 = LineVertex{ p1 + radius * (dir - norm), p0, p1, radius };
+		v3 = LineVertex{ p1 + radius * (dir + norm), p0, p1, radius };
 
-	if (points.size() == 1) {
-		points.emplace_back(point);
-		const auto& p0 = points[0];
-		const auto& p1 = points[1];
-
-		drawDir = glm::normalize(p1 - p0);
-		const auto dir = radius * drawDir;
-		const auto n = glm::vec2(-dir.y, dir.x);
+		/*const auto& prevPoint = points[points.size() - 3];
+		const auto prevDir = glm::normalize(p0 - prevPoint);
+		const auto cos = glm::dot(dir, prevDir);
+		auto& prev0 = mesh.vertex[index0 - 2];
+		auto& prev1 = mesh.vertex[index0 - 1];
+		if (cos > 0.9f) {
+			prev0.position = p0 - radius * norm;
+			prev1.position = p0 + radius * norm;
+		} else {
+			const auto prevNorm = glm::vec2(-prevDir.y, prevDir.x);
+			prev0.position = prev0.end + radius * (prevDir - prevNorm);
+			prev1.position = prev1.end + radius * (prevDir + prevNorm);
+		}*/
+	}
+}
+void Line::addNextPoint(const glm::vec2& position) {
+	points.emplace_back(position);
 	
-		mesh.vertex[0] = LineVertex{ p0 - dir - n, p0, p1, radius };
-		mesh.vertex[1] = LineVertex{ p0 - dir + n, p0, p1, radius };
-		mesh.vertex[2] = LineVertex{ p1 + dir - n, p0, p1, radius };
-		mesh.vertex[3] = LineVertex{ p1 + dir + n, p0, p1, radius };
-
-		return;
-	}
-
-	{
-		//make smooth line
-		const auto& back = points.back();
-		const auto dist = glm::length(point - back);
-		const auto pointDir = glm::normalize(point - back);
-		auto cos = glm::dot(pointDir, drawDir);
-		if (cos < 0.75f) {
-			points.emplace_back(back);
-			mesh.addQuad(back, radius);
-			drawDir = pointDir;
-		}
-		else {
-			constexpr float K = 0.5;
-			drawDir = K * drawDir + (1.f - K) * pointDir;
-			point = back + dist * drawDir;
-		}
-	}
-	
-	points.emplace_back(point);
-	const auto& p0 = points[points.size() - 3];
-	const auto& p1 = points[points.size() - 2];
-	const auto& p2 = points[points.size() - 1];
-
-	const auto dir1 = radius * glm::normalize(p2 - p0);
-	const auto n1 = glm::vec2(-dir1.y, dir1.x);
 	auto& vertex = mesh.vertex;
-	auto& prev1 = vertex[vertex.size() - 2];
-	auto& prev2 = vertex[vertex.size() - 1];
-	prev1.position = prev1.end - n1;
-	prev2.position = prev2.end + n1;
-
-	const auto dir2 = radius * glm::normalize(p2 - p1);
-	const auto n2 = glm::vec2(-dir2.y, dir2.x);
-	vertex.emplace_back(LineVertex{ p1 - n1,		p1, p2, radius });
-	vertex.emplace_back(LineVertex{ p1 + n1,		p1, p2, radius });
-	vertex.emplace_back(LineVertex{ p2 - n2 + dir2, p1, p2, radius });
-	vertex.emplace_back(LineVertex{ p2 + n2 + dir2, p1, p2, radius });
+	vertex.emplace_back();
+	vertex.emplace_back();
+	vertex.emplace_back();
+	vertex.emplace_back();
 
 	auto& face = mesh.face;
 	const uint16_t i0 = vertex.size() - 4;
@@ -188,10 +203,41 @@ void Line::addPoint(glm::vec2 point) {
 	face.emplace_back(i0, i1, i2);
 	face.emplace_back(i2, i1, i3);
 }
+void Line::drawSmooth(glm::vec2 position) {
+	size_t capacity = points.empty() ? 2 : 1000;
+	points.reserve(capacity);
+
+	if (points.empty()) {
+		points.emplace_back(position);
+		points.emplace_back(position);
+		mesh.addQuad(position, radius);
+		return;
+	}
+	
+	const auto& p0 = points[points.size() - 2];
+	const auto& p1 = points[points.size() - 1];
+	if (math::distanceL1(p0, p1) < radius) {
+		moveLastPoint(position);
+		return;
+	}
+
+	//{
+	//	//make line more smooth
+	//	const auto& back = points.back();
+	//	const auto dist = glm::length(position - back);
+	//	const auto pointDir = glm::normalize(position - back);
+	//	constexpr float K = 0.75;
+	//	drawDir = K * drawDir + (1.f - K) * pointDir;
+	//	position = back + dist * drawDir;
+	//}
+	addNextPoint(position);
+	moveLastPoint(position);
+	
+}
 void FrameRender::newLine(int x, int y, float width) {
 	auto point = toSceneSpace(x, y);
 	auto& line = lines.emplace_back(width);
-	line.addPoint(point);
+	line.drawSmooth(point);
 }
 void FrameRender::addPoint(int x, int y) {
 	if (lines.empty()) {
@@ -199,5 +245,5 @@ void FrameRender::addPoint(int x, int y) {
 	}
 	auto point = toSceneSpace(x, y);
 	auto& line = lines.back();
-	line.addPoint(point);
+	line.drawSmooth(point);
 }

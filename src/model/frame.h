@@ -15,13 +15,24 @@ struct Viewport {
 };
 
 struct Line {
+
+    struct ControlPoint {
+        size_t index = 0;
+        glm::vec2 pos;
+        glm::vec2 dir;
+    };
+
     float width;
-    float radius;
+    float radius; //todo: need this?
+    //std::vector<ControlPoint> cp;
     glm::vec2 drawDir;
     std::vector<glm::vec2> points;
     LineMesh mesh;
     explicit Line(float width);
-    void addPoint(glm::vec2 point);
+    void drawSmooth(glm::vec2 position);
+private:
+    void moveLastPoint(const glm::vec2& position);
+    void addNextPoint(const glm::vec2& position);
 };
 
 struct FrameRender {
