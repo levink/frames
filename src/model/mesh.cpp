@@ -27,4 +27,16 @@ ImageMesh ImageMesh::createImageMesh(int w, int h) {
     };
 }
 
+void LineMesh::reserveQuad() {
+    const uint16_t i = vertex.size();
+    vertex.emplace_back();
+    vertex.emplace_back();
+    vertex.emplace_back();
+    vertex.emplace_back();
+    face.emplace_back(i + 0, i + 1, i + 2);
+    face.emplace_back(i + 2, i + 1, i + 3);
+}
+bool LineMesh::empty() const {
+    return vertex.empty() || face.empty();
+}
 

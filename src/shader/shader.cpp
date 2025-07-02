@@ -32,15 +32,16 @@ void VideoShader::render(const FrameRender& frame) {
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-LinesShader::LinesShader() : Shader(4, 3) {
+LinesShader::LinesShader() : Shader(4, 4) {
     u[0] = Uniform("Proj");
     u[1] = Uniform("View");
     u[2] = Uniform("Color");
-    u[3] = Uniform("Width");
+    u[3] = Uniform("Offset");
 
     a[0] = Attribute(VEC_2, "in_Position");
     a[1] = Attribute(VEC_2, "in_LineStart");
     a[2] = Attribute(VEC_2, "in_LineEnd");
+    a[3] = Attribute(VEC_2, "in_Radius");
 }
 void LinesShader::enable() const {
     Shader::enable();
@@ -54,30 +55,31 @@ void LinesShader::disable() const {
     glDisable(GL_DEPTH_TEST);
 }
 void LinesShader::render(const FrameRender& frame) {
-    static const auto white = glm::vec3(1.f, 1.f, 1.f);
     
+    if (frame.lineMesh.empty()) {
+        return;
+    }
+
     set4(u[0], frame.cam.proj);
     set4(u[1], frame.cam.view);
-    for (const Line& item : frame.lines) {
-        set3(u[2], white);
-        set1(u[3], item.radius);
+    
+    static const auto whiteColor = glm::vec3(1.f, 1.f, 1.f);
+    const auto& mesh = frame.lineMesh;
+    const auto& vertex = mesh.vertex.data();
+    attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
+    attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
+    attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
+    attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
 
-        const auto& vertex = item.mesh.vertex.data();
-        attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
-        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
-        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
-        drawFaces(item.mesh.face);
-    }
-    for (const Line& item : frame.lines) {
-        set3(u[2], item.color);
-        set1(u[3], item.radius - 1.5f);
-
-        const auto& vertex = item.mesh.vertex.data();
-        attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
-        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
-        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
-        drawFaces(item.mesh.face);
-    }
+    //background
+    set3(u[2], whiteColor);
+    set1(u[3], 0.f);
+    drawFaces(mesh.face);
+    
+    //foreground
+    set3(u[2], mesh.color);
+    set1(u[3], -1.5f);
+    drawFaces(mesh.face);
 }
 
 

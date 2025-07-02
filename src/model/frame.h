@@ -21,20 +21,20 @@ struct Segment {
     bool openLeft = true;
     bool openRight = true;
     Segment() = default;
-    Segment(const glm::vec2& center);
+    Segment(const glm::vec2& p1, const glm::vec2& p2);
     void moveP2(const glm::vec2& position);
 };
 
 struct Line {
     float radius;
-    glm::vec3 color;
     std::vector<glm::vec2> points;
     std::vector<Segment> segments;
-    LineMesh mesh;
+    size_t meshOffset;
 
-    Line(float radius, const glm::vec3& color);
-    void addPoint(const glm::vec2& pos);
+    Line(float radius, size_t meshOffset);
+    void addPoint(const glm::vec2& pos, LineMesh& mesh);
     void moveLast(const glm::vec2& pos);
+    void updateMesh(LineMesh& mesh);
 };
 
 struct FrameRender {
@@ -49,6 +49,7 @@ struct FrameRender {
     glm::vec3 backColor = { 1.f, 1.f, 1.f };
     glm::vec3 frontColor = { 1.f, 0.f, 0.f };
     std::list<Line> lines;
+    LineMesh lineMesh;
 
     void create(int16_t width, int16_t height);
     void update(int16_t width, int16_t height, const uint8_t* pixels);

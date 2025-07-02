@@ -475,7 +475,7 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
         static float radius = 20.f;
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             draw = true;
-            frame.setLineColor(0.f, 1.f, 0.f);
+            frame.setLineColor(1.f, 0.f, 0.f);
             frame.setLineWidth(radius);
             frame.mouseClick(mx, my);
         } 

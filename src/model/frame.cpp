@@ -115,12 +115,16 @@ void FrameRender::setLineColor(float r, float g, float b) {
 	frontColor[0] = r;
 	frontColor[1] = g;
 	frontColor[2] = b;
+	lineMesh.color = frontColor;
 }
+
 void FrameRender::mouseClick(int x, int y) {
-	auto point = toSceneSpace(x, y);
-	auto radius = 0.5f * lineWidth;
-	Line& line = lines.emplace_back(Line(radius, frontColor));
-	line.addPoint(point);
+	const auto point = toSceneSpace(x, y);
+	const auto radius = 0.5f * lineWidth;
+	const auto meshOffset = lineMesh.vertex.size();
+	Line& line = lines.emplace_back(Line(radius, meshOffset));
+	line.addPoint(point, lineMesh);
+	line.updateMesh(lineMesh);
 }
 void FrameRender::mouseDrag(int x, int y) {
 	if (lines.empty()) {
@@ -129,12 +133,15 @@ void FrameRender::mouseDrag(int x, int y) {
 
 	auto point = toSceneSpace(x, y);
 	auto& line = lines.back();
+
 	if (line.points.size() < 2) {
-		line.addPoint(point);
+		line.addPoint(point, lineMesh);
 	} else {
 		//line.addPoint(point);
 		line.moveLast(point);
 	}
+	line.updateMesh(lineMesh);
+	
 }
 void FrameRender::mouseStop(int x, int y) {
 	//todo: close line here?
@@ -150,9 +157,9 @@ static glm::vec2 dirOrDefault(const glm::vec2& p1, const glm::vec2& p2, const gl
 	}
 	return math::dir(p1, p2);
 }
-Segment::Segment(const glm::vec2& center) : 
-	p1(center), 
-	p2(center) {
+Segment::Segment(const glm::vec2& p1, const glm::vec2& p2) :
+	p1(p1),
+	p2(p2) {
 	dir = dirOrDefault(p1, p2, { 0,1 });
 	n1 = { -dir.y, dir.x };
 	n2 = { -dir.y, dir.x };
@@ -166,78 +173,61 @@ void Segment::moveP2(const glm::vec2& pos) {
 	n2 = { -dir.y, dir.x };
 }
 
-static void updateVertex(LineVertex* data, const Segment& s, float r) {
 
-	if (s.openLeft && s.openRight) {
-		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2 };
-		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2 };
-		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2 };
-		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2 };
-	}
-	else if (s.openLeft) {
-		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2 };
-		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2 };
-		data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2};
-		data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2};
-	}
-	else if (s.openRight) {
-		data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2};
-		data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2};
-		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2 };
-		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2 };
+
+Line::Line(float radius, size_t meshOffset) :
+	radius(radius),
+	meshOffset(meshOffset) { }
+void Line::addPoint(const glm::vec2& pos, LineMesh& mesh) {
+	if (points.size() > 1) {
+		Segment segment(points.back(), pos);
+		points.emplace_back(pos);
+		segments.emplace_back(segment);
+		mesh.reserveQuad();	
+	} 
+	else if (points.empty()) {
+		points.emplace_back(pos);
+		segments.emplace_back(Segment(pos, pos));
+		mesh.reserveQuad();
 	}
 	else {
-		data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2 };
-		data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2 };
-		data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2 };
-		data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2 };
-	}
-}
-static void reserveQuad(LineMesh& mesh) {
-	const uint16_t i = mesh.vertex.size();
-	mesh.vertex.emplace_back();
-	mesh.vertex.emplace_back();
-	mesh.vertex.emplace_back();
-	mesh.vertex.emplace_back();
-	mesh.face.emplace_back(i + 0, i + 1, i + 2);
-	mesh.face.emplace_back(i + 2, i + 1, i + 3);
-}
-
-Line::Line(float radius, const glm::vec3& color) : 
-	radius(radius),
-	color(color) { }
-void Line::addPoint(const glm::vec2& pos) {
-	
-	if (points.empty()) {
-		points.emplace_back(pos);
-		segments.emplace_back(Segment(pos));
-		reserveQuad(mesh);
-	} 
-	else if (points.size() == 1) {
 		points.emplace_back(pos);
 		segments.back().moveP2(pos);
 	}
-	else {
-		Segment segment(points.back());
-		segment.moveP2(pos);
-		points.emplace_back(pos);
-		segments.emplace_back(segment);
-		reserveQuad(mesh);
-	}
-	
-	auto sIndex = segments.size() - 1;
-	auto vertex = &mesh.vertex[4 * sIndex];
-	updateVertex(vertex, segments[sIndex], radius);
 }
 void Line::moveLast(const glm::vec2& pos) {
-
-	if (points.empty() || segments.empty()) {
-		return;
-	}
-
 	points.back() = pos;
-	size_t index = segments.size() - 1;
-	Segment& segment = segments[index];
-	segment.moveP2(pos);
-	updateVertex(&mesh.vertex[index * 4], segment, radius);
+	segments.back().moveP2(pos);
+}
+static void updateVertex(LineVertex* data, const Segment& s, float r) {
+	if (s.openLeft && s.openRight) {
+		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2, r };
+		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2, r };
+		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2, r };
+		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2, r };
+	}
+	else if (s.openLeft) {
+		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2, r };
+		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2, r };
+		data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2, r };
+		data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2, r };
+	}
+	else if (s.openRight) {
+		data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2, r };
+		data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2, r };
+		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2, r };
+		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2, r };
+	}
+	else {
+		data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2, r };
+		data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2, r };
+		data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2, r };
+		data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2, r };
+	}
+}
+void Line::updateMesh(LineMesh& mesh) {
+	auto sIndex = segments.size() - 1;
+	auto data = &mesh.vertex[4 * sIndex]+ meshOffset;
+	auto& segment = segments[sIndex];
+	updateVertex(data, segment, radius);
 }

@@ -21,9 +21,13 @@ struct LineVertex {
     glm::vec2 position;
     glm::vec2 segmentP0;
     glm::vec2 segmentP1;
+    float radius = 0.f;
 };
 
 struct LineMesh {
     std::vector<LineVertex> vertex;
     std::vector<GLFace> face;
+    glm::vec3 color;
+    void reserveQuad();
+    bool empty() const;
 };
