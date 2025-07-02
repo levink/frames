@@ -25,5 +25,5 @@ void Render::destroyFrames() {
 	}
 }
 void Render::draw() {
-	frames[0].draw(shaders);
+	frames[0].render(shaders);
 }

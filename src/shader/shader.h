@@ -7,7 +7,7 @@ public:
     VideoShader();
     void enable() const override;
     void disable() const override;
-    void draw(const FrameRender& frame);
+    void render(const FrameRender& frame);
 };
 
 class LinesShader : public Shader {
@@ -15,7 +15,7 @@ public:
     LinesShader();
     void enable() const override;
     void disable() const override;
-    void draw(const FrameRender& frame);
+    void render(const FrameRender& frame);
 };
 
 class PointShader : public Shader {
@@ -23,7 +23,7 @@ public:
     PointShader();
     void enable() const override;
     void disable() const override;
-    void draw(const Camera& cam, const std::vector<glm::vec2>& points);
+    void render(const Camera& cam, const std::vector<glm::vec2>& points);
 };
 
 struct ShaderContext {

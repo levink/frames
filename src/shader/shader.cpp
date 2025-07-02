@@ -17,7 +17,7 @@ void VideoShader::disable() const {
     glDisable(GL_TEXTURE_2D);
     //glDisable(GL_DEPTH_TEST);
 }
-void VideoShader::draw(const FrameRender& frame) {
+void VideoShader::render(const FrameRender& frame) {
     if (!frame.textureReady) {
         return;
     }
@@ -26,22 +26,21 @@ void VideoShader::draw(const FrameRender& frame) {
     set1(u[0], 0);
     set4(u[1], frame.cam.proj);
     set4(u[2], frame.cam.view);
-    attr(a[0], frame.image.position);
-    attr(a[1], frame.image.texture);
-    drawFaces(frame.image.face);
+    attr(a[0], frame.imageMesh.position);
+    attr(a[1], frame.imageMesh.texture);
+    drawFaces(frame.imageMesh.face);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-LinesShader::LinesShader() : Shader(2, 4) {
+LinesShader::LinesShader() : Shader(4, 3) {
     u[0] = Uniform("Proj");
     u[1] = Uniform("View");
+    u[2] = Uniform("Color");
+    u[3] = Uniform("Width");
 
     a[0] = Attribute(VEC_2, "in_Position");
     a[1] = Attribute(VEC_2, "in_LineStart");
     a[2] = Attribute(VEC_2, "in_LineEnd");
-    a[3] = Attribute(FLOAT, "in_Radius");
-    //a[4] = Attribute(FLOAT, "in_Color");
-
 }
 void LinesShader::enable() const {
     Shader::enable();
@@ -54,23 +53,30 @@ void LinesShader::disable() const {
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
 }
-void LinesShader::draw(const FrameRender& frame) {
+void LinesShader::render(const FrameRender& frame) {
+    static const auto white = glm::vec3(1.f, 1.f, 1.f);
+    
     set4(u[0], frame.cam.proj);
     set4(u[1], frame.cam.view);
+    for (const Line& item : frame.lines) {
+        set3(u[2], white);
+        set1(u[3], item.radius);
 
-    for (const Line& line : frame.lines) {
-        const auto& vertex = line.mesh.vertex.data();
+        const auto& vertex = item.mesh.vertex.data();
         attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
-        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentStart));
-        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentEnd));
-        attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
-        //attr(a[4], vertex, sizeof(LineVertex), offsetof(LineVertex, color));
+        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
+        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
+        drawFaces(item.mesh.face);
+    }
+    for (const Line& item : frame.lines) {
+        set3(u[2], item.color);
+        set1(u[3], item.radius - 1.5f);
 
-        const auto& face = line.mesh.face;
-        drawFaces(face);
-
-        /*glDrawArrays(GL_LINE_STRIP, 0, frame.lineMesh.vertex.size());
-        glDrawElements(GL_LINE_STRIP, static_cast<int>(faces.size() * 3u), GL_UNSIGNED_SHORT, faces.data());*/
+        const auto& vertex = item.mesh.vertex.data();
+        attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
+        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
+        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
+        drawFaces(item.mesh.face);
     }
 }
 
@@ -91,11 +97,10 @@ void PointShader::disable() const {
     //glDepthMask(GL_TRUE);
     glDisable(0x8642); //GL_PROGRAM_POINT_SIZE
 }
-void PointShader::draw(const Camera& cam, const std::vector<glm::vec2>& points) {
+void PointShader::render(const Camera& cam, const std::vector<glm::vec2>& points) {
     if (points.empty()) {
         return;
     }
-
     set4(u[0], cam.proj);
     set4(u[1], cam.view);
     attr(a[0], points.data(), 0, 0);

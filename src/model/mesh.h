@@ -19,14 +19,11 @@ struct ImageMesh {
 
 struct LineVertex {
     glm::vec2 position;
-    glm::vec2 segmentStart;
-    glm::vec2 segmentEnd;
-    float radius;
+    glm::vec2 segmentP0;
+    glm::vec2 segmentP1;
 };
 
 struct LineMesh {
     std::vector<LineVertex> vertex;
     std::vector<GLFace> face;
-    LineMesh();
-    void addQuad(const glm::vec2& center, float radius);
 };

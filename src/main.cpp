@@ -472,17 +472,20 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
 
     {
         static bool draw = false;
-        static float radius = 100.f;
+        static float radius = 20.f;
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             draw = true;
-            frame.newLine(mx, my, radius);
+            frame.setLineColor(0.f, 1.f, 0.f);
+            frame.setLineWidth(radius);
+            frame.mouseClick(mx, my);
         } 
         else if (draw && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
             if (io.MouseDelta.x || io.MouseDelta.y) {
-                frame.addPoint(mx, my);
+                frame.mouseDrag(mx, my);
             }
         } else if (draw) {
             draw = false;
+            frame.mouseStop(mx, my);
         }
     }
     
@@ -517,6 +520,8 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(Mod::CONTROL, O)) {
         cmd::openFile(fc);  //todo: work with selected fc
+    } else if(key.is(X)) {
+        fc.render.clearDrawn();
     }
 }
 static bool loadGLES(GLFWwindow* window) {

@@ -27,32 +27,4 @@ ImageMesh ImageMesh::createImageMesh(int w, int h) {
     };
 }
 
-namespace {
-    constexpr size_t LINE_SIZE_MAX = 4 * 100;
-    constexpr size_t LINE_FACE_MAX = 2 * 100;
-}
-
-LineMesh::LineMesh() {
-    vertex.reserve(LINE_SIZE_MAX);
-    face.reserve(LINE_FACE_MAX);
-}
-void LineMesh::addQuad(const glm::vec2& center, float r) {
-    if (vertex.size() >= LINE_SIZE_MAX) {
-        return;
-    }
-
-    const float& x = center.x;
-    const float& y = center.y;
-    vertex.emplace_back(LineVertex{ { x - r, y - r }, center, center, r });
-    vertex.emplace_back(LineVertex{ { x - r, y + r }, center, center, r });
-    vertex.emplace_back(LineVertex{ { x + r, y - r }, center, center, r });
-    vertex.emplace_back(LineVertex{ { x + r, y + r }, center, center, r });
-
-    const uint16_t i0 = vertex.size() - 4;
-    const uint16_t i1 = i0 + 1;
-    const uint16_t i2 = i0 + 2;
-    const uint16_t i3 = i0 + 3;
-    face.emplace_back(i0, i1, i2);
-    face.emplace_back(i2, i1, i3);
-}
 
