@@ -31,4 +31,7 @@ void Camera::updateMatrix() {
     view = glm::scale(glm::mat4(1), scale);
     view = glm::translate(view, offset);
     pv_inverse = glm::inverse(proj * view);
+    scale_inverse = std::abs(scale.x) < 0.01f ? 
+        (1.f) :
+        (1.f / scale.x);
 }

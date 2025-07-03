@@ -7,6 +7,7 @@ struct Camera {
     glm::mat4 proj;
     glm::mat4 view;
     glm::mat4 pv_inverse;
+    float scale_inverse = 1; // (1 / scale.x);
 
     void reshape(int w, int h);
     void init(const glm::vec2& position, float zoom);

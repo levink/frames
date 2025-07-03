@@ -5,6 +5,7 @@ uniform mat4 Proj;
 uniform mat4 View;
 uniform vec3 Color;
 uniform float Offset;
+uniform float Scale;
 
 varying vec2 Position;
 varying vec2 LineStart;
@@ -40,14 +41,9 @@ float getDistance(vec2 start, vec2 end, vec2 point) {
     return distance(point, proj);
 }
 void main() {
-
-    //todo: 
-    // 1. precompute value "1/lenght"
-    // 2. avoid sqrt. calc distance square instead of distance and use it for calc alpha
-
-    float inner = Radius + Offset - 1.5;
-    float outer = Radius + Offset;
+    float inner = Radius + (Offset - 1.5) * Scale;
+    float outer = Radius + Offset * Scale;
     float dist = getDistance(LineStart, LineEnd, Position);
-    float alpha = smoothstep(outer, inner, dist);
+    float alpha = 1.0 - smoothstep(inner, outer, dist);
     gl_FragColor = vec4(Color, alpha);
 }

@@ -32,11 +32,12 @@ void VideoShader::render(const FrameRender& frame) {
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-LinesShader::LinesShader() : Shader(4, 4) {
+LinesShader::LinesShader() : Shader(5, 4) {
     u[0] = Uniform("Proj");
     u[1] = Uniform("View");
     u[2] = Uniform("Color");
     u[3] = Uniform("Offset");
+    u[4] = Uniform("Scale");
 
     a[0] = Attribute(VEC_2, "in_Position");
     a[1] = Attribute(VEC_2, "in_LineStart");
@@ -60,8 +61,10 @@ void LinesShader::render(const FrameRender& frame) {
         return;
     }
 
+  
     set4(u[0], frame.cam.proj);
     set4(u[1], frame.cam.view);
+    set1(u[4], frame.cam.scale_inverse);
     
     static const auto whiteColor = glm::vec3(1.f, 1.f, 1.f);
     const auto& mesh = frame.lineMesh;
@@ -81,7 +84,6 @@ void LinesShader::render(const FrameRender& frame) {
     set1(u[3], -1.5f);
     drawFaces(mesh.face);
 }
-
 
 PointShader::PointShader() : Shader(2, 1) {
     u[0] = Uniform("Proj");

@@ -120,7 +120,7 @@ void FrameRender::setLineColor(float r, float g, float b) {
 
 void FrameRender::mouseClick(int x, int y) {
 	const auto point = toSceneSpace(x, y);
-	const auto radius = 0.5f * lineWidth;
+	const auto radius = 0.5f * lineWidth * cam.scale_inverse;
 	const auto meshOffset = lineMesh.vertex.size();
 	Line& line = lines.emplace_back(Line(radius, meshOffset));
 	line.addPoint(point, lineMesh);
@@ -137,7 +137,7 @@ void FrameRender::mouseDrag(int x, int y) {
 	if (line.points.size() < 2) {
 		line.addPoint(point, lineMesh);
 	} else {
-		//line.addPoint(point);
+		//line.addPoint(point, lineMesh);
 		line.moveLast(point);
 	}
 	line.updateMesh(lineMesh);
