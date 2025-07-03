@@ -22,6 +22,7 @@ void Camera::move(int dx, int dy) {
 }
 
 void Camera::zoom(float value) {
+    value *= scale.x; //adaptive zoom
     scale.x += value;
     scale.y += value;
     updateMatrix();

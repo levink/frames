@@ -427,17 +427,15 @@ namespace cmd {
 /*
     Todo:
 
-        set correct name for frame
         change mode between move/draw/...?
         circle for cursor under the draw mode
         two frames
-        
-        --> show demo after this
+       
 
         select draw color
         play buttons panel
         play one / play all 
-        how to erase drawn?
+
         remember opened folder
         select mode for frame(?):
             1. move/scale video
@@ -469,7 +467,9 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
         }
     }
     if (io.MouseWheel) {
-        frame.zoom(io.MouseWheel);
+        bool shift = ImGui::IsKeyDown(ImGuiMod_Shift);
+        float value = shift ? (io.MouseWheel * 0.25f) : io.MouseWheel;
+        frame.zoom(value);
     }
 
     {
