@@ -387,14 +387,15 @@ namespace cmd {
         opened = false;
         return false;
     }
-    static void playFile(ui::FrameController& fc, const string& path, const char* name) {
+    static void playFile(ui::FrameController& fc, const string& path) {
         if (fc.player.open(path.c_str())) {
+            const auto fileName = fs::path(path).filename().string();
             const auto& info = fc.player.info;
             fc.render.clearDrawn();
             fc.render.create(info.width, info.height);
-            fc.window.setName(name);
+            fc.window.setName(fileName.c_str());
             cout << "File open - ok: " << path << endl;
-        }
+        } 
         else {
             std::cout << "File open - error" << std::endl;
         }
@@ -402,7 +403,7 @@ namespace cmd {
     static void openFile(ui::FrameController& fc) {
         string path;
         if (openFileDialog(path)) {
-            playFile(fc, path, "test");
+            playFile(fc, path);
         }
     }
     static void openFolder(ui::FolderWindow* folderWindow) {
@@ -603,15 +604,14 @@ int main(int argc, char* argv[]) {
         render.frames[0].reshape(left, top, width, height, vp.screen.y);
     };
     frameWindow.acceptDropFn = [](const string& path) {
-        cmd::playFile(fc, path, "test");
+        cmd::playFile(fc, path);
     };
     
     auto defaultPath = toUTF8(fs::current_path());
     folderWindow.open(defaultPath);
 
     auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
-    auto defaultFileName = "IMG_3504.MOV";
-    cmd::playFile(fc, defaultFilePath, defaultFileName);
+    cmd::playFile(fc, defaultFilePath);
 
     while (!glfwWindowShouldClose(window)) {
 
