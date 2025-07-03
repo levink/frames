@@ -140,14 +140,19 @@ namespace ui {
         string id;
         char name[128];
         bool opened;
+        bool hovered;
         Viewport viewPort;
         Slider slider;
+        function<void(bool)> hoverFn;
         function<void(int, int)> mouseFn;
         function<void(float, bool)> slideFn;
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
-        explicit FrameWindow(const char* id) : id(id), opened(true) {
+        explicit FrameWindow(const char* id) : 
+            id(id), 
+            opened(true), 
+            hovered(false) {
             setName("");
         }
         void setName(const char* label) {
@@ -181,13 +186,17 @@ namespace ui {
                 }
 
                 ImGui::InvisibleButton("full_size_area", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-                if (mouseFn && ImGui::IsItemHovered()) {
+                bool itemHovered = ImGui::IsItemHovered();
+                if (hoverFn && hovered != itemHovered) {
+                    hovered = itemHovered;
+                    hoverFn(hovered);
+                }
+                if (mouseFn && hovered) {
                     ImGuiIO& io = ImGui::GetIO();
                     auto localX = io.MousePos.x - cursor.x;
                     auto localY = io.MousePos.y - cursor.y;
                     mouseFn(localX, localY);
                 }
-
                 if (acceptDropFn && ImGui::BeginDragDropTarget()) {
                     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(dragDrop::PATH_TAG)) {
                         auto value = dragDrop::unpackString(payload->Data);
@@ -393,6 +402,8 @@ namespace cmd {
             const auto& info = fc.player.info;
             fc.render.clearDrawn();
             fc.render.create(info.width, info.height);
+            fc.render.setLineColor(1.f, 0.f, 0.f);
+            fc.render.setLineWidth(20.f);
             fc.window.setName(fileName.c_str());
             cout << "File open - ok: " << path << endl;
         } 
@@ -463,34 +474,27 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
         int dx = io.MouseDelta.x;
         int dy = io.MouseDelta.y;
         if (dx || dy) {
-            frame.move(dx, dy);
+            frame.moveCam(dx, dy);
         }
     }
     if (io.MouseWheel) {
         bool shift = ImGui::IsKeyDown(ImGuiMod_Shift);
         float value = shift ? (io.MouseWheel * 0.25f) : io.MouseWheel;
-        frame.zoom(value);
+        frame.zoomCam(value);
     }
 
-    {
-        static bool draw = false;
-        static float radius = 20.f;
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            draw = true;
-            frame.setLineColor(1.f, 0.f, 0.f);
-            frame.setLineWidth(radius);
-            frame.mouseClick(mx, my);
-        } 
-        else if (draw && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-            if (io.MouseDelta.x || io.MouseDelta.y) {
-                frame.mouseDrag(mx, my);
-            }
-        } else if (draw) {
-            draw = false;
-            frame.mouseStop(mx, my);
-        }
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        frame.setLineColor(1.f, 0.f, 0.f);
+        frame.setLineWidth(20.f);
+        frame.mouseStart(mx, my);
+    } 
+    else if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+        frame.mouseStop(mx, my);
     }
-    
+    else if (io.MouseDelta.x || io.MouseDelta.y) {
+        bool pressed = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+        frame.mouseMove(mx, my, pressed);
+    }    
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
     using namespace io;
@@ -591,6 +595,9 @@ int main(int argc, char* argv[]) {
     };
     mainMenuBar.quit = [&window]() {
         glfwSetWindowShouldClose(window, GL_TRUE);
+    };
+    frameWindow.hoverFn = [](bool hovered) {
+        render.frames[0].mouseHover(hovered);
     };
     frameWindow.mouseFn = [](int mx, int my) {
         mouseCallback(render.frames[0], mx, my);

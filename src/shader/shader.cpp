@@ -57,32 +57,51 @@ void LinesShader::disable() const {
 }
 void LinesShader::render(const FrameRender& frame) {
     
-    if (frame.lineMesh.empty()) {
-        return;
-    }
-
-  
     set4(u[0], frame.cam.proj);
     set4(u[1], frame.cam.view);
     set1(u[4], frame.cam.scale_inverse);
-    
-    static const auto whiteColor = glm::vec3(1.f, 1.f, 1.f);
-    const auto& mesh = frame.lineMesh;
-    const auto& vertex = mesh.vertex.data();
-    attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
-    attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
-    attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
-    attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
 
-    //background
-    set3(u[2], whiteColor);
-    set1(u[3], 0.f);
-    drawFaces(mesh.face);
-    
-    //foreground
-    set3(u[2], mesh.color);
-    set1(u[3], -1.5f);
-    drawFaces(mesh.face);
+    static const auto whiteColor = glm::vec3(1.f, 1.f, 1.f);
+
+    if (!frame.lineMesh.empty()) {
+        const auto& mesh = frame.lineMesh;
+        const auto& vertex = mesh.vertex.data();
+        attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
+        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
+        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
+        attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
+
+        //background
+        set3(u[2], whiteColor);
+        set1(u[3], 0.f);
+        drawFaces(mesh.face);
+
+        //foreground
+        set3(u[2], mesh.color);
+        set1(u[3], -1.5f);
+        drawFaces(mesh.face);
+    }
+
+    if (frame.cursor.visible && !frame.cursor.mesh.empty()) {
+        const auto& mesh = frame.cursor.mesh;
+        const auto& vertex = mesh.vertex.data();
+        attr(a[0], vertex, sizeof(LineVertex), offsetof(LineVertex, position));
+        attr(a[1], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP0));
+        attr(a[2], vertex, sizeof(LineVertex), offsetof(LineVertex, segmentP1));
+        attr(a[3], vertex, sizeof(LineVertex), offsetof(LineVertex, radius));
+
+        //background
+        set3(u[2], whiteColor);
+        set1(u[3], 0.f);
+        drawFaces(mesh.face);
+
+        //foreground
+        set3(u[2], mesh.color);
+        set1(u[3], -1.5f);
+        drawFaces(mesh.face);
+    }
+
+
 }
 
 PointShader::PointShader() : Shader(2, 1) {
