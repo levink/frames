@@ -30,4 +30,5 @@ struct LineMesh {
     glm::vec3 color;
     void reserveQuad();
     bool empty() const;
+    void clear();
 };

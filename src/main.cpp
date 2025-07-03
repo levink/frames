@@ -390,6 +390,7 @@ namespace cmd {
     static void playFile(ui::FrameController& fc, const string& path, const char* name) {
         if (fc.player.open(path.c_str())) {
             const auto& info = fc.player.info;
+            fc.render.clearDrawn();
             fc.render.create(info.width, info.height);
             fc.window.setName(name);
             cout << "File open - ok: " << path << endl;

@@ -148,6 +148,7 @@ void FrameRender::mouseStop(int x, int y) {
 }
 void FrameRender::clearDrawn() {
 	lines.clear();
+	lineMesh.clear();
 }
 
 static glm::vec2 dirOrDefault(const glm::vec2& p1, const glm::vec2& p2, const glm::vec2& defVal) {

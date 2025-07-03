@@ -39,4 +39,8 @@ void LineMesh::reserveQuad() {
 bool LineMesh::empty() const {
     return vertex.empty() || face.empty();
 }
+void LineMesh::clear() {
+    vertex.clear();
+    face.clear();
+}
 
