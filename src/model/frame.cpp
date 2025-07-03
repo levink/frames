@@ -47,18 +47,25 @@ namespace gl {
 	}
 }
 
-void FrameRender::create(int16_t width, int16_t height) {
-    if (textureId) {
-        glDeleteTextures(1, &textureId);
+void FrameRender::createTexture(int16_t width, int16_t height) {
+    if (imageMesh.textureId) {
+        glDeleteTextures(1, &imageMesh.textureId);
     }
-	textureReady = false;
-	textureId = gl::createTexture(width, height);
-    imageMesh = ImageMesh::createImageMesh(width, height);
+	imageMesh = ImageMesh::createImageMesh(width, height);
+	imageMesh.textureId = gl::createTexture(width, height);
+	imageMesh.textureReady = false;
     cam.init({ -width / 2, -height / 2 }, 1.f);
 }
-void FrameRender::update(int16_t width, int16_t height, const uint8_t* pixels) {
-	gl::updateTexture(textureId, width, height, pixels);
-	textureReady = true;
+void FrameRender::updateTexture(int16_t width, int16_t height, const uint8_t* pixels) {
+	gl::updateTexture(imageMesh.textureId, width, height, pixels);
+	imageMesh.textureReady = true;
+}
+void FrameRender::destroyTexture() {
+	if (imageMesh.textureId) {
+		glDeleteTextures(1, &imageMesh.textureId);
+		imageMesh.textureId = 0;
+		imageMesh.textureReady = false;
+	}
 }
 void FrameRender::reshape(int left, int top, int width, int height, int screenHeight) {
 	vp.left = left;
@@ -133,13 +140,10 @@ void FrameRender::setLineColor(float r, float g, float b) {
 	lineMesh.color = frontColor;
 	cursor.mesh.color = frontColor;
 }
-void FrameRender::mouseHover(bool hovered) {
-	cursor.visible = hovered;
-	if (!hovered) {
-		draw = false;
-	}
+void FrameRender::showCursor(bool visible) {
+	cursor.visible = visible;
 }
-void FrameRender::mouseStart(int x, int y) {
+void FrameRender::drawStart(int x, int y) {
 	if (!draw) {
 		draw = true;
 	}
@@ -151,12 +155,7 @@ void FrameRender::mouseStart(int x, int y) {
 	line.addPoint(pos, lineMesh);
 	line.updateMesh(lineMesh);
 }
-void FrameRender::mouseStop(int x, int y) {
-	if (draw) {
-		draw = false;
-	}
-}
-void FrameRender::mouseMove(int x, int y, bool pressed) {
+void FrameRender::drawNext(int x, int y, bool pressed) {
 	cursor.visible = !pressed;
 	
 	auto pos = setCursor(x, y);
@@ -170,6 +169,11 @@ void FrameRender::mouseMove(int x, int y, bool pressed) {
 			line.moveLast(pos);
 		}
 		line.updateMesh(lineMesh);
+	}
+}
+void FrameRender::drawStop() {
+	if (draw) {
+		draw = false;
 	}
 }
 void FrameRender::clearDrawn() {

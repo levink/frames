@@ -21,6 +21,7 @@ ImageMesh ImageMesh::createImageMesh(int w, int h) {
        { 2, 3, 0 }
     };
     return ImageMesh{
+        0, false,
         std::move(position),
         std::move(texture),
         std::move(face)

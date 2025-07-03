@@ -46,10 +46,7 @@ struct FrameRender {
     Viewport vp;
 	Camera cam;
     Cursor cursor;
-    
-    GLuint textureId = 0;       //todo: move to imageMesh?
-    bool textureReady = false;  //todo: move to imageMesh?
-	ImageMesh imageMesh;
+    ImageMesh imageMesh;
     
     bool draw = false;
     float lineWidth = 5.f;
@@ -58,18 +55,19 @@ struct FrameRender {
     std::list<Line> lines;
     LineMesh lineMesh;   
 
-    void create(int16_t width, int16_t height);
-    void update(int16_t width, int16_t height, const uint8_t* pixels);
+    void createTexture(int16_t width, int16_t height);
+    void updateTexture(int16_t width, int16_t height, const uint8_t* pixels);
+    void destroyTexture();
     void reshape(int left, int top, int width, int height, int screenHeight);
     void moveCam(int dx, int dy);
     void zoomCam(float value);
     void render(ShaderContext& shader) const;
     void setLineWidth(float width);
     void setLineColor(float r, float g, float b);
-    void mouseHover(bool hovered);
-    void mouseStart(int x, int y);
-    void mouseStop(int x, int y);
-    void mouseMove(int x, int y, bool pressed);
+    void showCursor(bool visible);
+    void drawStart(int x, int y);
+    void drawNext(int x, int y, bool pressed);
+    void drawStop();
     void clearDrawn();
 
 private:

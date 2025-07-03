@@ -18,11 +18,11 @@ void VideoShader::disable() const {
     //glDisable(GL_DEPTH_TEST);
 }
 void VideoShader::render(const FrameRender& frame) {
-    if (!frame.textureReady) {
+    if (!frame.imageMesh.textureReady) {
         return;
     }
 
-    glBindTexture(GL_TEXTURE_2D, frame.textureId);
+    glBindTexture(GL_TEXTURE_2D, frame.imageMesh.textureId);
     set1(u[0], 0);
     set4(u[1], frame.cam.proj);
     set4(u[2], frame.cam.view);

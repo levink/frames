@@ -17,13 +17,10 @@ void Render::destroyShaders() {
 	shaders.point.destroy();
 }
 void Render::destroyFrames() {
-	for (auto& frame : frames) {
-		if (frame.textureId) {
-			glDeleteTextures(1, &frame.textureId);
-			frame.textureId = 0;
-		}
-	}
+	frames[0].destroyTexture();
+	frames[1].destroyTexture();
 }
-void Render::draw() {
+void Render::render() {
 	frames[0].render(shaders);
+	frames[1].render(shaders);
 }

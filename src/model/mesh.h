@@ -11,6 +11,8 @@ struct GLFace {
 };
 
 struct ImageMesh {
+    GLuint textureId = 0;
+    bool textureReady = false;
     std::vector<glm::vec2> position;
     std::vector<glm::vec2> texture;
     std::vector<GLFace> face;
@@ -31,6 +33,5 @@ struct LineMesh {
     void reserveQuad();
     bool empty() const;
     void clear();
-
     void createPoint(size_t vertexOffset, const glm::vec2& pos, float radius);
 };

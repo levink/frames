@@ -149,11 +149,11 @@ namespace ui {
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
 
-        explicit FrameWindow(const char* id) : 
+        explicit FrameWindow(const char* name, const char* id) : 
             id(id), 
             opened(true), 
             hovered(false) {
-            setName("");
+            setName(name);
         }
         void setName(const char* label) {
             memset(name, 0, sizeof(name));
@@ -166,11 +166,12 @@ namespace ui {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             //ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
             //ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowBgAlpha(0.1f);
 
             constexpr int padding = 8;
             ImGuiWindowFlags flags =
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoBackground;
+                ImGuiWindowFlags_NoCollapse;
+                //ImGuiWindowFlags_NoBackground;
             ImGui::Begin(name, &opened, flags);
 
             //frame
@@ -250,7 +251,7 @@ namespace ui {
 
     public:
         explicit FolderWindow(const char* name) : windowName(name) {}
-        void open(const string& pathUTF8) {
+        void openFolder(const string& pathUTF8) {
             fs::path path = fs::u8path(pathUTF8);
             if (fs::is_directory(path)) {
                 root.folder = true;
@@ -269,6 +270,9 @@ namespace ui {
                 root.pathUTF8 = toUTF8(path);
                 root.nameUTF8 = toUTF8(path.filename());
             }
+        }
+        void openFile(const string& pathUTF8) {
+            //todo: implement this
         }
         void show() {
             if (windowOpened) {
@@ -346,127 +350,68 @@ namespace ui {
 
     struct FrameController {
         Player& player;
-        FrameRender& render;
-        FrameWindow& window;
+        FrameRender& frameRender;
+        FrameWindow& frameWindow;
+        bool active = true;
+        void linkChildreen();
+        void update(const time_point& now);
+        void openFile(const string& path);
+        void togglePause();
+        void seekLeft();
+        void seekRight();
+        void clearDrawn();
     };
 }
 
-namespace cmd {
-    static bool openFileDialog(string& path) {
-        static bool opened = false;
+Render render;
+Player player0;
+Player player1;
+ui::MainMenuBar mainMenuBar;
+ui::FolderWindow folderWindow("##folderWindow");
+ui::FrameWindow frameWin0("Frame 0", "##frameWindow_0");
+ui::FrameWindow frameWin1("Frame 1", "##frameWindow_1");
+ui::FrameController fc[2] = {
+    { player0, render.frames[0], frameWin0 },
+    { player1, render.frames[1], frameWin1 }
+};
 
-        if (opened) {
-            return false;
-        }
 
-        opened = true;
-        nfdchar_t* bytesUTF8 = nullptr;
-        nfdresult_t result = NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
-        if (result == NFD_OKAY) {
-            path = string(bytesUTF8);
-            NFD_Free(&bytesUTF8);
-            opened = false;
-            return true;
-        }
-        else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
-        else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
+static bool showNativeFileDialog(string& path, bool folder) {
+    static bool opened = false;
 
-        opened = false;
+    if (opened) {
         return false;
     }
-    static bool openFolderDialog(string& path) {
-        static bool opened = false;
 
-        if (opened) {
-            return false;
-        }
-
-        opened = true;
-        nfdchar_t* bytesUTF8 = nullptr;
-        nfdresult_t result = NFD_PickFolder(nullptr, &bytesUTF8);
-        if (result == NFD_OKAY) {
-            path = string(bytesUTF8);// fs::u8path(bytesUTF8);
-            NFD_Free(&bytesUTF8);
-            opened = false;
-            return true;
-        }
-        else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
-        else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
-
+    opened = true;
+    nfdchar_t* bytesUTF8 = nullptr;
+    nfdresult_t result = folder ? 
+        NFD_PickFolder(nullptr, &bytesUTF8) :
+        NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
+    if (result == NFD_OKAY) {
+        path = string(bytesUTF8);
+        NFD_Free(&bytesUTF8);
         opened = false;
-        return false;
+        return true;
     }
-    static void playFile(ui::FrameController& fc, const string& path) {
-        if (fc.player.open(path.c_str())) {
-            const auto fileName = fs::path(path).filename().string();
-            const auto& info = fc.player.info;
-            fc.render.clearDrawn();
-            fc.render.create(info.width, info.height);
-            fc.render.setLineColor(1.f, 0.f, 0.f);
-            fc.render.setLineWidth(20.f);
-            fc.window.setName(fileName.c_str());
-            cout << "File open - ok: " << path << endl;
-        } 
-        else {
-            std::cout << "File open - error" << std::endl;
-        }
-    }
-    static void openFile(ui::FrameController& fc) {
-        string path;
-        if (openFileDialog(path)) {
-            playFile(fc, path);
-        }
-    }
-    static void openFolder(ui::FolderWindow* folderWindow) {
-        string path;
-        if (openFolderDialog(path)) {
-            folderWindow->open(path);
-        }
-    }
-    static void togglePause(Player* player) {
-        bool newValue = !(player->ps.paused);
-        player->pause(newValue);
-    }
-    static void seekLeft(Player* player) {
-        player->seekLeft();
-    }
-    static void seekRight(Player* player) {
-        player->seekRight();
+    else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
+    else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
+
+    opened = false;
+    return false;
+}
+static void openFileCommand() {
+    string path;
+    if (showNativeFileDialog(path, false)) {
+        folderWindow.openFile(path);
     }
 }
-
-/*
-    Todo:
-
-        change mode between move/draw/...?
-        circle for cursor under the draw mode
-        two frames
-       
-
-        select draw color
-        play buttons panel
-        play one / play all 
-
-        remember opened folder
-        select mode for frame(?):
-            1. move/scale video
-            2. draw on video
-            3. playing/steps (?)
-
-        separate file for ui
-        react on opening non video files (bad format error?)
-        move nfd/include to ./include dir? + move nfd to separate lib?
-        perfect would be render frames to the textures (RTT)
-        and use them all in the imgui side
-*/
-
-Render render;
-Player player;
-ui::MainMenuBar mainMenuBar;
-ui::FrameWindow frameWindow("##frameWindow");
-ui::FolderWindow folderWindow("##folderWindow");
-ui::FrameController fc { player, render.frames[0], frameWindow };
-
+static void openFolderCommand() {
+    string path;
+    if (showNativeFileDialog(path, true)) {
+        folderWindow.openFolder(path);
+    }
+}
 static void mouseCallback(FrameRender& frame, int mx, int my) {
   
     ImGuiIO& io = ImGui::GetIO();
@@ -486,14 +431,14 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
         frame.setLineColor(1.f, 0.f, 0.f);
         frame.setLineWidth(20.f);
-        frame.mouseStart(mx, my);
+        frame.drawStart(mx, my);
     } 
     else if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-        frame.mouseStop(mx, my);
+        frame.drawStop();
     }
     else if (io.MouseDelta.x || io.MouseDelta.y) {
         bool pressed = ImGui::IsMouseDown(ImGuiMouseButton_Right);
-        frame.mouseMove(mx, my, pressed);
+        frame.drawNext(mx, my, pressed);
     }    
 }
 static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int action, int mods) {
@@ -513,22 +458,27 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.is(SPACE)) {
-        cmd::togglePause(&fc.player);
+        fc[0].togglePause();
+        fc[1].togglePause();
     }
     else if (key.is(LEFT)) {
-        cmd::seekLeft(&fc.player);
+        fc[0].seekLeft(); //todo: longseek
+        fc[1].seekLeft();
     }
     else if (key.is(RIGHT)) {
-        cmd::seekRight(&fc.player);
+        fc[0].seekRight();//todo: longseek
+        fc[1].seekRight();
+    }
+    else if (key.is(X)) {
+        fc[0].clearDrawn();
+        fc[1].clearDrawn();
     }
     else if (key.is(Mod::CONTROL, K, O)) {
-        cmd::openFolder(&folderWindow);
+        openFolderCommand();
     }
     else if (key.is(Mod::CONTROL, O)) {
-        cmd::openFile(fc);  //todo: work with selected fc
-    } else if(key.is(X)) {
-        fc.render.clearDrawn();
-    }
+        openFileCommand();
+    } 
 }
 static bool loadGLES(GLFWwindow* window) {
     glfwMakeContextCurrent(window);
@@ -565,6 +515,95 @@ static void destroyImGui() {
     ImGui::DestroyContext();
 }
 
+
+void ui::FrameController::linkChildreen() {
+    frameWindow.hoverFn = [this](bool hovered) {
+        if (hovered) {
+            frameRender.showCursor(true);
+        }
+        else {
+            frameRender.showCursor(false);
+            frameRender.drawStop();
+        }
+    };
+    frameWindow.mouseFn = [this](int mx, int my) {
+        mouseCallback(frameRender, mx, my);
+    };
+    frameWindow.slideFn = [this](float progress, bool hold) {
+        player.seekProgress(progress, hold);
+    };
+    frameWindow.reshapeFn = [this](const ui::Viewport& vp) {
+        const auto [left, top] = vp.cursor;
+        const auto [width, height] = vp.region;
+        frameRender.reshape(left, top, width, height, vp.screen.y);
+    };
+    frameWindow.acceptDropFn = [this](const string& path) {
+        this->openFile(path);
+    };
+}
+void ui::FrameController::update(const time_point& now) {
+    if (player.hasUpdate(now)) {
+        const RGBFrame* rgb = player.currentFrame();
+        frameRender.updateTexture(rgb->width, rgb->height, rgb->pixels);
+        frameWindow.setProgress(player.ps.progress);
+    }
+}
+void ui::FrameController::openFile(const string& path) {
+    if (player.open(path.c_str())) {
+        const auto fileName = fs::path(path).filename().string();
+        const auto& info = player.info;
+        frameRender.clearDrawn();
+        frameRender.createTexture(info.width, info.height);
+        frameRender.setLineColor(1.f, 0.f, 0.f);
+        frameRender.setLineWidth(20.f);
+        frameWindow.setName(fileName.c_str());
+        cout << "File open - ok: " << path << endl;
+    }
+    else {
+        std::cout << "File open - error" << std::endl;
+    }
+}
+void ui::FrameController::togglePause() {
+    if (active) {
+        bool newValue = !(player.ps.paused);
+        player.pause(newValue);
+    }
+
+}
+void ui::FrameController::seekLeft() {
+    if (active) {
+        player.seekLeft();
+    }
+}
+void ui::FrameController::seekRight() {
+    if (active) {
+        player.seekRight();
+    }
+}
+void ui::FrameController::clearDrawn() {
+    frameRender.clearDrawn();
+}
+
+
+/*
+    Todo:
+        change mode between move/draw/...?
+        select draw color
+        play buttons panel
+        play one / play all
+
+        remember opened folder
+        select mode for frame(?):
+            1. move/scale video
+            2. draw on video
+            3. playing/steps (?)
+
+        react on opening non video files (bad format error?)
+        move nfd/include to ./include dir? + move nfd to separate lib?
+        perfect would be render frames to the textures (RTT)
+        and use them all in the imgui side
+*/
+
 int main(int argc, char* argv[]) {
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
@@ -588,55 +627,38 @@ int main(int argc, char* argv[]) {
     initImGui(window);
     
     mainMenuBar.openFile = []() {
-        cmd::openFile(fc);
+        openFileCommand();
     };
     mainMenuBar.openFolder = []() {     
-        cmd::openFolder(&folderWindow);
+        openFolderCommand();
     };
     mainMenuBar.quit = [&window]() {
         glfwSetWindowShouldClose(window, GL_TRUE);
     };
-    frameWindow.hoverFn = [](bool hovered) {
-        render.frames[0].mouseHover(hovered);
-    };
-    frameWindow.mouseFn = [](int mx, int my) {
-        mouseCallback(render.frames[0], mx, my);
-    };
-    frameWindow.slideFn = [](float progress, bool hold) {
-        player.seekProgress(progress, hold);
-    };
-    frameWindow.reshapeFn = [](const ui::Viewport& vp) {
-        const auto [left, top] = vp.cursor;
-        const auto [width, height] = vp.region;
-        render.frames[0].reshape(left, top, width, height, vp.screen.y);
-    };
-    frameWindow.acceptDropFn = [](const string& path) {
-        cmd::playFile(fc, path);
-    };
+    fc[0].linkChildreen();
+    fc[1].linkChildreen();
     
     auto defaultPath = toUTF8(fs::current_path());
-    folderWindow.open(defaultPath);
+    folderWindow.openFolder(defaultPath);
 
-    auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
-    cmd::playFile(fc, defaultFilePath);
+    //auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
+    //cmd::playFile(fc, defaultFilePath);
 
     while (!glfwWindowShouldClose(window)) {
 
         auto now = steady_clock::now();
-        if (player.hasUpdate(now)) { 
-            const RGBFrame* rgb = player.currentFrame();
-            render.frames[0].update(rgb->width, rgb->height, rgb->pixels);
-            frameWindow.setProgress(player.ps.progress);
-        }
+        fc[0].update(now);
+        fc[1].update(now);
 
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        render.draw(); 
+        render.render(); 
 
         ui::newFrame();
         mainMenuBar.show();
         folderWindow.show();
-        frameWindow.show();
+        frameWin0.show();
+        frameWin1.show();
         ui::render();
 
         glFlush();
@@ -644,7 +666,8 @@ int main(int argc, char* argv[]) {
         glfwPollEvents();
     }
 
-    player.stop();
+    player0.stop();
+    player1.stop();
     render.destroyFrames();
     render.destroyShaders();
     destroyImGui();
