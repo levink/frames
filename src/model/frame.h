@@ -66,8 +66,7 @@ struct FrameRender {
     void moveCam(int dx, int dy);
     void zoomCam(float value);
     void render(ShaderContext& shader) const;
-    void setLineWidth(float width);
-    void setLineColor(float r, float g, float b);
+    void setBrush(const glm::vec3& color, float width);
     void showCursor(bool visible);
     void drawStart(int x, int y);
     void drawNext(int x, int y, bool pressed);

@@ -655,7 +655,8 @@ namespace video {
     }
 
 
-    bool Player::open(const char* fileName) {
+    bool Player::start(const char* fileName) {
+        ps.started = false;
         frameQ.flush(loader);
         loader.stop();
 
@@ -664,12 +665,14 @@ namespace video {
             loader.start();
             lastUpdate = std::chrono::steady_clock::now();
             ps = PlayState();
+            ps.started = true;
             return true;
         }
 
         return false;
     }
     void Player::stop() {
+        ps.started = false;
         frameQ.flush(loader);
         loader.stop();
     }
@@ -731,9 +734,13 @@ namespace video {
     bool Player::hasUpdate(const time_point& now) {
         using std::chrono::microseconds;
         using std::chrono::duration_cast;
+        
+        if (!ps.started) {
+            return false;
+        }
 
         frameQ.fillFrom(loader);
-
+            
         if (!ps.paused && !ps.hold) {
             auto durationMicros = duration_cast<microseconds>(now - lastUpdate).count();
             auto durationPts = info.microsToPts(durationMicros);

@@ -138,6 +138,7 @@ namespace video {
     };
 
     struct PlayState {
+        bool started = false;
         bool hold = false;
         bool paused = true;
         bool update = true;     // flag for update frame when paused or manual seek
@@ -153,7 +154,7 @@ namespace video {
         PlayState ps;
         time_point lastUpdate;
 
-        bool open(const char* fileName);
+        bool start(const char* fileName);
         void stop();
         void seekProgress(float progress, bool hold);
         void seekLeft();

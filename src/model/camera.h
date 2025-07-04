@@ -2,8 +2,8 @@
 #include <glm/glm.hpp>
 
 struct Camera {
-    glm::vec3 offset;
-    glm::vec3 scale;
+    glm::vec3 offset = { 0, 0, 0 };
+    glm::vec3 scale = { 1, 1, 1 };
     glm::mat4 proj;
     glm::mat4 view;
     glm::mat4 pv_inverse;

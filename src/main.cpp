@@ -422,8 +422,7 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
     }
 
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        frame.setLineColor(1.f, 0.f, 0.f);
-        frame.setLineWidth(20.f);
+        frame.setBrush({ 1.f, 0.f, 0.f }, 20.f);
         frame.drawStart(mx, my);
     } 
     else if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
@@ -543,13 +542,11 @@ void ui::FrameController::update(const time_point& now) {
     }
 }
 void ui::FrameController::openFile(const string& path) {
-    if (player.open(path.c_str())) {
+    if (player.start(path.c_str())) {
         const auto fileName = fs::path(path).filename().string();
         const auto& info = player.info;
         frameRender.clearDrawn();
         frameRender.createTexture(info.width, info.height);
-        frameRender.setLineColor(1.f, 0.f, 0.f);
-        frameRender.setLineWidth(20.f);
         frameWindow.setName(fileName.c_str());
         cout << "File open - ok: " << path << endl;
     }
@@ -580,21 +577,7 @@ void ui::FrameController::clearDrawn() {
 
 /*
     Todo:
-        check ui::FrameController::update()
-        check player is opened during fc.update(...)
-        change mode between move/draw/...?
-        select draw color
-        play buttons panel
-        play one / play all
-
         remember opened folder
-        select mode for frame(?):
-            1. move/scale video
-            2. draw on video
-            3. playing/steps (?)
-
-        react on opening non video files (bad format error?)
-        move nfd/include to ./include dir? + move nfd to separate lib?
 */
 
 int main(int argc, char* argv[]) {
@@ -637,6 +620,9 @@ int main(int argc, char* argv[]) {
 
     auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
     fc[0].openFile(defaultFilePath);
+
+    fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
+    fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
 
     while (!glfwWindowShouldClose(window)) {
 

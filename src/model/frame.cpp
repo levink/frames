@@ -117,7 +117,7 @@ void FrameRender::destroyTexture() {
 	}
 }
 void FrameRender::reshape(int width, int height) {
-    cam.reshape(width, height);
+	cam.reshape(width, height);
 	fb.reshape(width, height);
 }
 void FrameRender::moveCam(int dx, int dy) {
@@ -187,13 +187,9 @@ glm::vec2 FrameRender::setCursor(int x, int y) {
 	}
 	return cursor.position;
 }
-void FrameRender::setLineWidth(float width) {
+void FrameRender::setBrush(const glm::vec3& color, float width) {
 	lineWidth = width;
-}
-void FrameRender::setLineColor(float r, float g, float b) {
-	frontColor[0] = r;
-	frontColor[1] = g;
-	frontColor[2] = b;
+	frontColor = color;
 	lineMesh.color = frontColor;
 	cursor.mesh.color = frontColor;
 }
