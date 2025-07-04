@@ -1,4 +1,4 @@
-#include "settings.h"
+#include "workspace.h"
 #include <fstream>
 
 using namespace std;
@@ -43,7 +43,7 @@ namespace {
 	};
 }
 
-void Settings::save(const char* path) {
+void Workspace::save(const char* path) {
 	ofstream file(path, ios::out | ios::binary);
 	if (!file.is_open()) {
 		return;
@@ -58,16 +58,16 @@ void Settings::save(const char* path) {
 	}
 }
 
-void Settings::load(const char* path) {
+bool Workspace::load(const char* path) {
 	ifstream file(path, ios::in | ios::binary);
 	if (!file.is_open()) {
-		return;
+		return false;
 	}
 
 	auto reader = BinaryReader(file);
 	auto version = reader.getUInt32();
 	if (version != formatVersion) {
-		return;
+		return false;
 	}
 
 	reader.getString(folderWindow.folder);
@@ -77,4 +77,5 @@ void Settings::load(const char* path) {
 	for (size_t i = 0; i < size; i++) {
 		reader.getString(folderWindow.files[i]);
 	}
+	return true;
 }

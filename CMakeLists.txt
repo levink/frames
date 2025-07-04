@@ -32,7 +32,7 @@ add_executable(app
 	src/video/video.cpp
 	src/main.cpp
 	src/render.cpp
-	src/settings.cpp
+	src/workspace.cpp
 )
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/include/ffmpeg/)

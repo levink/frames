@@ -8,7 +8,7 @@
 #include "video/video.h"
 #include "render.h"
 #include "resources.h"
-#include "settings.h"
+#include "workspace.h"
 #include "imgui.h"
 #include "nfd.h"
 #include "backends/imgui_impl_glfw.h"
@@ -588,18 +588,22 @@ static void destroyImGui() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
-static void saveSettings() {
-    Settings settings;
-    folderWindow.saveState(settings.folderWindow);
-    settings.save(resources::state);
+static void saveWorkspace() {
+    Workspace ws;
+    folderWindow.saveState(ws.folderWindow);
+    ws.save(resources::workspace);
 }
-static void restoreSettings() {
-    Settings settings;
-    settings.load(resources::state);
-    folderWindow.restoreState(settings.folderWindow);
+static void restoreWorkspace() {
+    Workspace ws;
+    bool ok = ws.load(resources::workspace);
+    if (!ok) {
+        return;
+    }
 
-    fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
-    fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
+    folderWindow.restoreState(ws.folderWindow);
+
+   /* fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
+    fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);*/
 
     //auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
     //fc[0].openFile(defaultFilePath);
@@ -711,7 +715,7 @@ int main(int argc, char* argv[]) {
     fc[0].linkChildreen();
     fc[1].linkChildreen();
 
-    restoreSettings();
+    restoreWorkspace();
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -735,7 +739,7 @@ int main(int argc, char* argv[]) {
         glfwPollEvents();
     }
 
-    saveSettings();
+    saveWorkspace();
 
     player0.stop();
     player1.stop();

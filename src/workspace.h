@@ -8,10 +8,10 @@ struct FolderWindowState {
     std::vector<std::string> files;
 };
 
-struct Settings {
-    const uint32_t formatVersion = 2;
+struct Workspace {
+    const uint32_t formatVersion = 1;
     FolderWindowState folderWindow;
 
     void save(const char* path);
-    void load(const char* path);
+    bool load(const char* path);
 };
