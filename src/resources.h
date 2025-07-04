@@ -5,4 +5,5 @@ namespace resources {
 	static const char* pointShader = "../../data/shaders/point.glsl";
 	static const char* videoShader = "../../data/shaders/video.glsl";
 	static const char* font = "../../data/fonts/calibri.ttf";
+	static const char* state = "./state.ini";
 }

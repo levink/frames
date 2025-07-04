@@ -8,6 +8,7 @@
 #include "video/video.h"
 #include "render.h"
 #include "resources.h"
+#include "settings.h"
 #include "imgui.h"
 #include "nfd.h"
 #include "backends/imgui_impl_glfw.h"
@@ -21,15 +22,19 @@ using std::function;
 using std::string;
 using std::chrono::steady_clock;
 
+static void openFileCommand();
+static void openFolderCommand();
+
+
 namespace ui {
 
     namespace dragDrop {
         constexpr static const char* PATH_TAG = "DRAG_DROP_PATH";
-        static const void* packString(const string& value) {
-            return &value;
+        static const void* packPath(const fs::path* pointer) {
+            return pointer;
         }
-        static const string* unpackString(void* data) {
-            return *(string**)(data);   // Take care =)
+        static const fs::path* unpackPath(void* data) {
+            return *(fs::path**)(data);   // Take care =)
         }
     }
 
@@ -186,8 +191,9 @@ namespace ui {
                 }
                 if (acceptDropFn && ImGui::BeginDragDropTarget()) {
                     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(dragDrop::PATH_TAG)) {
-                        auto value = dragDrop::unpackString(payload->Data);
-                        acceptDropFn(*value);
+                        auto path = dragDrop::unpackPath(payload->Data);
+                        auto str = toUTF8(*path);
+                        acceptDropFn(str);
                     }
                     ImGui::EndDragDropTarget();
                 }
@@ -227,114 +233,190 @@ namespace ui {
 
     struct FolderWindow {
     private:
-        struct Node {
+
+        struct FileNode {
+            fs::path path;
+            string name;
+        };
+
+        struct TreeNode {
             bool folder = false;
             bool loaded = false;
-            bool opened = false;
+            bool expanded = false;
             fs::path path;
-            string pathUTF8;
-            string nameUTF8;
-            list<Node> childreen;
+            string name;
+            list<TreeNode> childreen;
         };
 
         const char* windowName = nullptr;
         bool windowOpened = true;
-        Node root;
+        char searchBuffer[32] = { 0 };
+        list<FileNode> files;
+        TreeNode folder;
 
     public:
         explicit FolderWindow(const char* name) : windowName(name) {}
         void openFolder(const string& pathUTF8) {
             fs::path path = fs::u8path(pathUTF8);
+            bool exists = fs::exists(path);
+            if (!exists) {
+                return;
+            }
+
             if (fs::is_directory(path)) {
-                root.folder = true;
-                root.loaded = true;
-                root.opened = true;
-                root.path = path;
-                root.pathUTF8 = toUTF8(path);
-                root.nameUTF8 = toUTF8(path.filename());
-                loadChildreen(path, root.childreen);
+                folder.folder = true;
+                folder.loaded = true;
+                folder.expanded = true;
+                folder.path = path;
+                folder.name = toUTF8(path.filename());
+                loadChildreen(folder);
             }
             else {
-                root.folder = false;
-                root.loaded = false;
-                root.opened = false;
-                root.path = path;
-                root.pathUTF8 = toUTF8(path);
-                root.nameUTF8 = toUTF8(path.filename());
+                folder.folder = false;
+                folder.loaded = false;
+                folder.expanded = false;
+                folder.path = path;
+                folder.name = toUTF8(path.filename());
             }
         }
         void openFile(const string& pathUTF8) {
-            //todo: implement this
+            fs::path path = fs::u8path(pathUTF8);
+            bool exists = fs::exists(path);
+            if (!exists) {
+                return;
+            }
+
+            string name = toUTF8(path.filename());
+            files.emplace_front(FileNode {
+                std::move(path),
+                std::move(name)
+            });
         }
         void show() {
             if (windowOpened) {
                 ImGui::Begin(windowName, &windowOpened,
                     ImGuiWindowFlags_NoCollapse |
-                    ImGuiWindowFlags_NoTitleBar |
+                    ImGuiWindowFlags_NoTitleBar | 
                     ImGuiWindowFlags_HorizontalScrollbar);
-                showChildreen(root);
+
+                const auto region = ImGui::GetContentRegionAvail();
+                const auto btnSize = ImVec2(region.x, 0);
+                ImGui::SetNextItemWidth(region.x);
+                ImGui::InputTextWithHint("##filter", "Search...", searchBuffer, 32);
+                ImGui::Spacing();
+
+                bool workspaceEmpty = files.empty() && folder.name.empty();
+                if (workspaceEmpty) {
+                    ImGui::Spacing();
+                    if (ImGui::Button("Open Folder", btnSize)) { openFolderCommand(); }
+                }
+                else {
+
+                    const bool hasFiles = !files.empty();
+                    const bool hasFolder = !folder.name.empty();
+
+                    if (hasFiles) {
+                        FileNode* deleteItem = nullptr;
+                        for (int id = 0; auto& item : files) {
+                            ImGui::SetNextItemAllowOverlap();
+                            ImGui::Selectable(item.name.c_str());
+                            ImGui::SameLine(region.x - 8);
+                            ImGui::PushID(id++);
+                            if (ImGui::SmallButton("X")) {
+                                deleteItem = &item;
+                            }
+                            ImGui::SetItemTooltip("Remove");
+                            ImGui::PopID();
+                        }
+
+                        if (deleteItem) {
+                            files.remove_if([deleteItem](FileNode& node) {
+                                return deleteItem == &node;
+                            });
+                        }
+                    }
+
+                    if (hasFiles && hasFolder) {
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        ImGui::Spacing();
+                    }
+                    
+                    if (hasFolder) {
+                        showNode(folder);
+                    } else {
+                        ImGui::Spacing();
+                        if (ImGui::Button("Open Folder", btnSize)) { openFolderCommand(); }
+                    }
+                }
                 ImGui::End();
             }
         }
-        void refresh() {
-            /*
-                Todo: implement this
-                Need check correctness of all filenames & folders
-                because structure might be changed from outside
-            */
+        void saveState(FolderWindowState& state) const {
+            state.folder = toUTF8(folder.path);
+            state.files.reserve(files.size());
+            for (auto& item : files) {
+                state.files.push_back(toUTF8(item.path));
+            }
+        }
+        void restoreState(const FolderWindowState& state) {
+            if (!state.folder.empty()) {
+                openFolder(state.folder);
+            }
+            
+            auto& files = state.files;
+            for (auto it = files.rbegin(); it != files.rend(); it++) {
+                openFile(*it);
+            }
         }
 
     private:
-        void loadChildreen(const fs::path& path, list<Node>& result) {
-            result.clear();
-            for (const auto& child : fs::directory_iterator(path)) {
+        void loadChildreen(TreeNode& parent) {
+            parent.childreen.clear();
+            for (const auto& child : fs::directory_iterator(parent.path)) {
                 auto& childPath = child.path();
-
-                Node node;
+                TreeNode node;
                 node.folder = fs::is_directory(childPath);
                 node.loaded = false;
-                node.opened = false;
+                node.expanded = false;
                 node.path = childPath;
-                node.pathUTF8 = toUTF8(childPath);
-                node.nameUTF8 = toUTF8(childPath.filename());
-                result.push_back(node);
+                node.name = toUTF8(childPath.filename());
+                parent.childreen.push_back(node);
             }
 
-            auto foldersOnTop = [](const Node& left, const Node& right) {
+            auto foldersOnTop = [](const TreeNode& left, const TreeNode& right) {
                 return left.folder > right.folder;
-                };
-            std::stable_sort(result.begin(), result.end(), foldersOnTop);
+            };
+            std::stable_sort(parent.childreen.begin(), parent.childreen.end(), foldersOnTop);
         }
-        void showChildreen(Node& node) {
+        void showNode(TreeNode& node) {
             ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesNone;
-            if (node.opened) {
+            if (node.expanded) {
                 base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            node.opened = false;
-            if (ImGui::TreeNodeEx(node.nameUTF8.c_str(), base_flags)) {
-                node.opened = true;
-                if (!node.loaded) {
+            node.expanded = ImGui::TreeNodeEx(node.name.c_str(), base_flags);
+            if (node.expanded) {
+                if (node.folder && !node.loaded) {
                     node.loaded = true;
-                    loadChildreen(node.path, node.childreen);
+                    loadChildreen(node);
                 }
                 for (auto& child : node.childreen) {
                     if (child.folder) {
-                        showChildreen(child);
-                    }
-                    else {
+                        showNode(child);
+                    } else {
                         showFile(child);
                     }
                 }
                 ImGui::TreePop();
             }
         }
-        void showFile(Node& node) {
-            ImGui::Selectable(node.nameUTF8.c_str());
+        void showFile(TreeNode& node) {
+            ImGui::Selectable(node.name.c_str());
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
-                auto data = dragDrop::packString(node.pathUTF8);
+                auto data = dragDrop::packPath(&node.path);
                 ImGui::SetDragDropPayload(dragDrop::PATH_TAG, &data, sizeof(data), ImGuiCond_Once);
-                ImGui::Text(node.nameUTF8.c_str());
+                ImGui::Text(node.name.c_str());
                 ImGui::EndDragDropSource();
             }
         }
@@ -506,7 +588,22 @@ static void destroyImGui() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
+static void saveSettings() {
+    Settings settings;
+    folderWindow.saveState(settings.folderWindow);
+    settings.save(resources::state);
+}
+static void restoreSettings() {
+    Settings settings;
+    settings.load(resources::state);
+    folderWindow.restoreState(settings.folderWindow);
 
+    fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
+    fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
+
+    //auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
+    //fc[0].openFile(defaultFilePath);
+}
 
 void ui::FrameController::linkChildreen() {
     frameWindow.hoverFn = [this](bool hovered) {
@@ -534,7 +631,6 @@ void ui::FrameController::linkChildreen() {
     frameTexture = ImTextureRef(frameRender.fb.tid);
 }
 void ui::FrameController::update(const time_point& now) {
-    //todo: check player is opened
     if (player.hasUpdate(now)) {
         const RGBFrame* rgb = player.currentFrame();
         frameRender.updateTexture(rgb->width, rgb->height, rgb->pixels);
@@ -614,15 +710,8 @@ int main(int argc, char* argv[]) {
     };
     fc[0].linkChildreen();
     fc[1].linkChildreen();
-    
-    auto defaultPath = toUTF8(fs::current_path());
-    folderWindow.openFolder(defaultPath);
 
-    auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
-    fc[0].openFile(defaultFilePath);
-
-    fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
-    fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
+    restoreSettings();
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -645,6 +734,8 @@ int main(int argc, char* argv[]) {
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
+    saveSettings();
 
     player0.stop();
     player1.stop();
