@@ -90,12 +90,12 @@ namespace video {
     int64_t StreamInfo::ptsToMicros(int64_t pts) const {
         auto num = pts * time_base.num * 1000000;
         auto den = time_base.den;
-        return num / den;
+        return den ? (num / den) : 0;
     }
     int64_t StreamInfo::microsToPts(int64_t micros) const {
         auto num = micros * time_base.den;
         auto den = 1000000 * time_base.num;
-        return num / den;
+        return den ? (num / den) : 0;
     }
     int64_t StreamInfo::progressToPts(float progress) const {
         return (progress * durationPts) / 100.f; //todo: trunc [0, maxPts]?

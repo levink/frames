@@ -7,11 +7,15 @@
 
 struct ShaderContext; //forward
 
-struct Viewport {
-    int left    = 0;   
-    int bottom  = 0; 
-    int width   = 1;  
-    int height  = 1;
+struct FrameBuffer {
+    GLuint fbo = 0; //frame buffer id
+    GLuint rbo = 0; //render buffer id
+    GLuint tid = 0; //render texture id
+    int width  = 0;
+    int height = 0;
+    void create(float w, float h);
+    void reshape(float w, float h);
+    void destroy();
 };
 
 struct Cursor {
@@ -43,8 +47,8 @@ struct Line {
 };
 
 struct FrameRender {
-    Viewport vp;
-	Camera cam;
+    FrameBuffer fb;
+    Camera cam;
     Cursor cursor;
     ImageMesh imageMesh;
     
@@ -58,7 +62,7 @@ struct FrameRender {
     void createTexture(int16_t width, int16_t height);
     void updateTexture(int16_t width, int16_t height, const uint8_t* pixels);
     void destroyTexture();
-    void reshape(int left, int top, int width, int height, int screenHeight);
+    void reshape(int width, int height);
     void moveCam(int dx, int dy);
     void zoomCam(float value);
     void render(ShaderContext& shader) const;

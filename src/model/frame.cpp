@@ -42,9 +42,58 @@ namespace gl {
 			pixels);					// Source data pointer
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
-	static void setViewport(const Viewport& vp) {
-		glViewport(vp.left, vp.bottom, vp.width, vp.height);
+}
+
+void FrameBuffer::create(float w, float h) {
+	width = w;
+	height = h;
+	
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+	glGenTextures(1, &tid);
+	glBindTexture(GL_TEXTURE_2D, tid);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tid, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	glGenRenderbuffers(1, &rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		cout << "Error: Framebuffer is not complete\n";
 	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+void FrameBuffer::reshape(float w, float h) {
+	width = w;
+	height = h;
+	glBindTexture(GL_TEXTURE_2D, tid);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tid, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+}
+void FrameBuffer::destroy() {
+	glDeleteFramebuffers(1, &fbo);
+	glDeleteRenderbuffers(1, &rbo);
+	glDeleteTextures(1, &tid);
+	fbo = 0;
+	rbo = 0;
+	tid = 0;
+	width = 0;
+	height = 0;
 }
 
 void FrameRender::createTexture(int16_t width, int16_t height) {
@@ -54,7 +103,7 @@ void FrameRender::createTexture(int16_t width, int16_t height) {
 	imageMesh = ImageMesh::createImageMesh(width, height);
 	imageMesh.textureId = gl::createTexture(width, height);
 	imageMesh.textureReady = false;
-    cam.init({ -width / 2, -height / 2 }, 1.f);
+    cam.init({ -width * 0.5f, -height * 0.5f }, 1.f);
 }
 void FrameRender::updateTexture(int16_t width, int16_t height, const uint8_t* pixels) {
 	gl::updateTexture(imageMesh.textureId, width, height, pixels);
@@ -67,12 +116,9 @@ void FrameRender::destroyTexture() {
 		imageMesh.textureReady = false;
 	}
 }
-void FrameRender::reshape(int left, int top, int width, int height, int screenHeight) {
-	vp.left = left;
-	vp.bottom = screenHeight - (top + height);
-	vp.width = width;
-	vp.height = height;
+void FrameRender::reshape(int width, int height) {
     cam.reshape(width, height);
+	fb.reshape(width, height);
 }
 void FrameRender::moveCam(int dx, int dy) {
 	cam.move(dx, -dy);
@@ -82,7 +128,14 @@ void FrameRender::zoomCam(float units) {
 	setCursor(cursor.screen.x, cursor.screen.y);
 }
 void FrameRender::render(ShaderContext& shaders) const {
-	gl::setViewport(vp);
+	
+	glBindFramebuffer(GL_FRAMEBUFFER, fb.fbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, fb.rbo);
+	glBindTexture(GL_TEXTURE_2D, fb.tid);
+
+	glViewport(0, 0, fb.width, fb.height);
+	glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
 
 	shaders.video.enable();
 	shaders.video.render(*this);
@@ -97,17 +150,21 @@ void FrameRender::render(ShaderContext& shaders) const {
 		//shaders.point.render(cam, line.points);
 	}
 	shaders.point.disable();
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 glm::vec2 FrameRender::toOpenGLSpace(int x, int y) const {
     /*
        Converting
-       from view space x = [0, frameWidth], y = [0, frameHeight]	- coordinates from top left corner of view
-       to OpenGL space x = [-1, 1], y = [-1, 1]						- coordinates from bottom left corner of view
+       from view space x = [0, fb.Width], y = [0, fb.Height]	- coordinates from top left corner of view
+       to OpenGL space x = [-1, 1], y = [-1, 1]					- coordinates from bottom left corner of view
     */
     auto result = glm::vec2(
-        ((2.f * x) / vp.width) - 1.f,
-        1.f - ((2.f * y) / vp.height)
+        ((2.f * x) / fb.width) - 1.f,
+        1.f - ((2.f * y) / fb.height)
     );
     return result;
 }

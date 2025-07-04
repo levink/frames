@@ -9,5 +9,7 @@ struct Render {
 	void reloadShaders();
 	void destroyShaders();
 	void destroyFrames();
+	void createFrameBuffers();
+	void destroyFrameBuffers();
 	void render();
 };

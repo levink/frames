@@ -7,6 +7,7 @@
 #include "util/fs.h"
 #include "video/video.h"
 #include "render.h"
+#include "resources.h"
 #include "imgui.h"
 #include "nfd.h"
 #include "backends/imgui_impl_glfw.h"
@@ -88,22 +89,12 @@ namespace ui {
     };
 
     struct Viewport {
-        ImVec2 cursor;
         ImVec2 region;
-        ImVec2 screen;
-        bool update(const ImVec2& cursor, const ImVec2& region, const ImVec2& screen) {
-            bool changed =
-                this->cursor.x != cursor.x ||
-                this->cursor.y != cursor.y ||
-                this->region.x != region.x ||
-                this->region.y != region.y ||
-                this->screen.x != screen.x ||
-                this->screen.y != screen.y;
-            if (changed) {
-                this->cursor = cursor;
-                this->region = region;
-                this->screen = screen;
-            }
+        bool update(const ImVec2& value) {
+            bool changed = 
+                region.x != value.x ||
+                region.y != value.y;
+            region = value;
             return changed;
         }
     };
@@ -162,30 +153,25 @@ namespace ui {
         void setProgress(float progress) {
             slider.progress = progress;
         }
-        void show() {
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        void show(const ImTextureRef& texture) {
+          
             //ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
             //ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowBgAlpha(0.1f);
+            //ImGui::SetNextWindowBgAlpha(0.1f);
 
-            constexpr int padding = 8;
-            ImGuiWindowFlags flags =
-                ImGuiWindowFlags_NoCollapse;
-                //ImGuiWindowFlags_NoBackground;
-            ImGui::Begin(name, &opened, flags);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); //no padding
+            ImGui::Begin(name, &opened, ImGuiWindowFlags_NoCollapse);
 
-            //frame
+            auto cursor = ImGui::GetCursorScreenPos();
+            auto region = ImGui::GetContentRegionAvail();
+
+            // invisible button
             {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-                ImGui::BeginChild("frame");
-                auto cursor = ImGui::GetCursorScreenPos();
-                auto region = ImGui::GetContentRegionAvail();
-                auto screen = ImGui::GetMainViewport()->Size;
-                bool changed = viewPort.update(cursor, region, screen);
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));   
+                bool changed = viewPort.update(region);
                 if (changed && reshapeFn) {
                     reshapeFn(viewPort);
                 }
-
                 ImGui::InvisibleButton("full_size_area", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
                 bool itemHovered = ImGui::IsItemHovered();
                 if (hoverFn && hovered != itemHovered) {
@@ -205,15 +191,21 @@ namespace ui {
                     }
                     ImGui::EndDragDropTarget();
                 }
-
-                ImGui::EndChild();
                 ImGui::PopStyleVar();
             }
 
-            //slider
-            {
+            // video texture (RTT)
+            ImTextureID textureId = texture.GetTexID();
+            if (textureId != ImTextureID_Invalid) {
+                ImGui::SetCursorScreenPos(cursor);
+                ImGui::Image(textureId, region, ImVec2(0, 1), ImVec2(1, 0));
+            }
+            
+            // slider
+            {  
+                constexpr int padding = 8;
                 auto cursor = ImGui::GetCursorScreenPos();
-                cursor.y -= ImGui::GetFrameHeight() + padding * 2;
+                cursor.y -= ImGui::GetFrameHeightWithSpacing() + padding * 2;
                 ImGui::SetCursorScreenPos(cursor);
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
                 ImGui::BeginChild("slider", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
@@ -352,6 +344,7 @@ namespace ui {
         Player& player;
         FrameRender& frameRender;
         FrameWindow& frameWindow;
+        ImTextureRef frameTexture;
         bool active = true;
         void linkChildreen();
         void update(const time_point& now);
@@ -368,11 +361,11 @@ Player player0;
 Player player1;
 ui::MainMenuBar mainMenuBar;
 ui::FolderWindow folderWindow("##folderWindow");
-ui::FrameWindow frameWin0("Frame 0", "##frameWindow_0");
-ui::FrameWindow frameWin1("Frame 1", "##frameWindow_1");
+ui::FrameWindow frameWindow_0("Frame 0", "##frameWindow_01");
+ui::FrameWindow frameWindow_1("Frame 1", "##frameWindow_1");
 ui::FrameController fc[2] = {
-    { player0, render.frames[0], frameWin0 },
-    { player1, render.frames[1], frameWin1 }
+    { player0, render.frames[0], frameWindow_0 },
+    { player1, render.frames[1], frameWindow_1 }
 };
 
 
@@ -506,7 +499,7 @@ static void initImGui(GLFWwindow* window) {
     ImGui_ImplOpenGL3_Init();
 
     ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromFileTTF("../../data/fonts/calibri.ttf", 14);
+    io.Fonts->AddFontFromFileTTF(resources::font, 14);
     io.Fonts->Build();   
 }
 static void destroyImGui() {
@@ -533,15 +526,16 @@ void ui::FrameController::linkChildreen() {
         player.seekProgress(progress, hold);
     };
     frameWindow.reshapeFn = [this](const ui::Viewport& vp) {
-        const auto [left, top] = vp.cursor;
         const auto [width, height] = vp.region;
-        frameRender.reshape(left, top, width, height, vp.screen.y);
+        frameRender.reshape(width, height);
     };
     frameWindow.acceptDropFn = [this](const string& path) {
         this->openFile(path);
     };
+    frameTexture = ImTextureRef(frameRender.fb.tid);
 }
 void ui::FrameController::update(const time_point& now) {
+    //todo: check player is opened
     if (player.hasUpdate(now)) {
         const RGBFrame* rgb = player.currentFrame();
         frameRender.updateTexture(rgb->width, rgb->height, rgb->pixels);
@@ -584,9 +578,10 @@ void ui::FrameController::clearDrawn() {
     frameRender.clearDrawn();
 }
 
-
 /*
     Todo:
+        check ui::FrameController::update()
+        check player is opened during fc.update(...)
         change mode between move/draw/...?
         select draw color
         play buttons panel
@@ -600,8 +595,6 @@ void ui::FrameController::clearDrawn() {
 
         react on opening non video files (bad format error?)
         move nfd/include to ./include dir? + move nfd to separate lib?
-        perfect would be render frames to the textures (RTT)
-        and use them all in the imgui side
 */
 
 int main(int argc, char* argv[]) {
@@ -623,6 +616,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     render.createShaders();
+    render.createFrameBuffers();
     initWindow(window);
     initImGui(window);
     
@@ -641,24 +635,24 @@ int main(int argc, char* argv[]) {
     auto defaultPath = toUTF8(fs::current_path());
     folderWindow.openFolder(defaultPath);
 
-    //auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
-    //cmd::playFile(fc, defaultFilePath);
+    auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
+    fc[0].openFile(defaultFilePath);
 
     while (!glfwWindowShouldClose(window)) {
 
         auto now = steady_clock::now();
         fc[0].update(now);
-        fc[1].update(now);
+        fc[1].update(now); 
 
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        render.render(); 
 
         ui::newFrame();
         mainMenuBar.show();
         folderWindow.show();
-        frameWin0.show();
-        frameWin1.show();
+        frameWindow_0.show(fc[0].frameTexture);
+        frameWindow_1.show(fc[1].frameTexture);
+        render.render();
         ui::render();
 
         glFlush();
@@ -670,6 +664,7 @@ int main(int argc, char* argv[]) {
     player1.stop();
     render.destroyFrames();
     render.destroyShaders();
+    render.destroyFrameBuffers();
     destroyImGui();
     glfwTerminate();
 	return 0;

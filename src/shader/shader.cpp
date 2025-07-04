@@ -100,8 +100,6 @@ void LinesShader::render(const FrameRender& frame) {
         set1(u[3], -1.5f);
         drawFaces(mesh.face);
     }
-
-
 }
 
 PointShader::PointShader() : Shader(2, 1) {
