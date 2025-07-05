@@ -22,9 +22,11 @@ using std::function;
 using std::string;
 using std::chrono::steady_clock;
 
-static void openFileCommand();
-static void openFolderCommand();
-
+namespace cmd {
+    static void openFile();
+    static void openFolder();
+    static void quitProgram();
+}
 
 namespace ui {
 
@@ -234,7 +236,7 @@ namespace ui {
     struct FolderWindow {
     private:
 
-        struct FileNode {
+        struct FileItem {
             fs::path path;
             string name;
         };
@@ -251,7 +253,7 @@ namespace ui {
         const char* windowName = nullptr;
         bool windowOpened = true;
         char searchBuffer[32] = { 0 };
-        list<FileNode> files;
+        list<FileItem> files;
         TreeNode folder;
 
     public:
@@ -287,7 +289,7 @@ namespace ui {
             }
 
             string name = toUTF8(path.filename());
-            files.emplace_front(FileNode {
+            files.emplace_front(FileItem{
                 std::move(path),
                 std::move(name)
             });
@@ -299,16 +301,16 @@ namespace ui {
                     ImGuiWindowFlags_NoTitleBar | 
                     ImGuiWindowFlags_HorizontalScrollbar);
 
-                const auto region = ImGui::GetContentRegionAvail();
-                const auto btnSize = ImVec2(region.x, 0);
-                ImGui::SetNextItemWidth(region.x);
+                const auto region = ImGui::GetContentRegionAvail().x;
+                const auto btnSize = ImVec2(region, 0);
+                ImGui::SetNextItemWidth(region);
                 ImGui::InputTextWithHint("##filter", "Search...", searchBuffer, 32);
                 ImGui::Spacing();
 
                 bool workspaceEmpty = files.empty() && folder.name.empty();
                 if (workspaceEmpty) {
                     ImGui::Spacing();
-                    if (ImGui::Button("Open Folder", btnSize)) { openFolderCommand(); }
+                    if (ImGui::Button("Open Folder", btnSize)) { cmd::openFolder(); }
                 }
                 else {
 
@@ -316,24 +318,36 @@ namespace ui {
                     const bool hasFolder = !folder.name.empty();
 
                     if (hasFiles) {
-                        FileNode* deleteItem = nullptr;
+
+                        FileItem* itemForDelete = nullptr;
+                        ImGuiStyle& style = ImGui::GetStyle();
+                        auto group_start = ImGui::GetCursorPosX() + style.FramePadding.x;
+                        auto group_size = ImVec2(region - 2 * style.FramePadding.x, 0);
+                        auto btn_offset = group_size.x - style.ItemSpacing.x - style.FramePadding.x;
+
+                        ImGui::SetCursorPosX(group_start);
+                        ImGui::BeginGroup();
                         for (int id = 0; auto& item : files) {
-                            ImGui::SetNextItemAllowOverlap();
-                            ImGui::Selectable(item.name.c_str());
-                            ImGui::SameLine(region.x - 8);
                             ImGui::PushID(id++);
+                            ImGui::SetNextItemAllowOverlap();
+                            ImGui::Selectable(item.name.c_str(), false, 0, group_size);
+                            setDragDrop(&item.path, item.name);
+
+                            ImGui::SameLine(btn_offset);
                             if (ImGui::SmallButton("X")) {
-                                deleteItem = &item;
+                                itemForDelete = &item;
                             }
                             ImGui::SetItemTooltip("Remove");
                             ImGui::PopID();
                         }
+                        ImGui::EndGroup();
 
-                        if (deleteItem) {
-                            files.remove_if([deleteItem](FileNode& node) {
-                                return deleteItem == &node;
+                        if (itemForDelete) {
+                            files.remove_if([itemForDelete](FileItem& node) {
+                                return itemForDelete == &node;
                             });
                         }
+
                     }
 
                     if (hasFiles && hasFolder) {
@@ -346,7 +360,7 @@ namespace ui {
                         showNode(folder);
                     } else {
                         ImGui::Spacing();
-                        if (ImGui::Button("Open Folder", btnSize)) { openFolderCommand(); }
+                        if (ImGui::Button("Open Folder", btnSize)) { cmd::openFolder(); }
                     }
                 }
                 ImGui::End();
@@ -413,10 +427,13 @@ namespace ui {
         }
         void showFile(TreeNode& node) {
             ImGui::Selectable(node.name.c_str());
+            setDragDrop(&node.path, node.name);
+        }
+        void setDragDrop(fs::path* path, string& tooltip) {
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
-                auto data = dragDrop::packPath(&node.path);
+                auto data = dragDrop::packPath(path);
                 ImGui::SetDragDropPayload(dragDrop::PATH_TAG, &data, sizeof(data), ImGuiCond_Once);
-                ImGui::Text(node.name.c_str());
+                ImGui::Text(tooltip.c_str());
                 ImGui::EndDragDropSource();
             }
         }
@@ -475,17 +492,20 @@ static bool showNativeFileDialog(string& path, bool folder) {
     opened = false;
     return false;
 }
-static void openFileCommand() {
+static void cmd::openFile() {
     string path;
     if (showNativeFileDialog(path, false)) {
         folderWindow.openFile(path);
     }
 }
-static void openFolderCommand() {
+static void cmd::openFolder() {
     string path;
     if (showNativeFileDialog(path, true)) {
         folderWindow.openFolder(path);
     }
+}
+static void cmd::quitProgram() {
+
 }
 static void mouseCallback(FrameRender& frame, int mx, int my) {
   
@@ -548,10 +568,10 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         fc[1].clearDrawn();
     }
     else if (key.is(Mod::CONTROL, K, O)) {
-        openFolderCommand();
+        cmd::openFolder();
     }
     else if (key.is(Mod::CONTROL, O)) {
-        openFileCommand();
+        cmd::openFile();
     } 
 }
 static bool loadGLES(GLFWwindow* window) {
@@ -704,10 +724,10 @@ int main(int argc, char* argv[]) {
     initImGui(window);
     
     mainMenuBar.openFile = []() {
-        openFileCommand();
+        cmd::openFile();
     };
     mainMenuBar.openFolder = []() {     
-        openFolderCommand();
+        cmd::openFolder();
     };
     mainMenuBar.quit = [&window]() {
         glfwSetWindowShouldClose(window, GL_TRUE);
