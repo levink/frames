@@ -106,6 +106,35 @@ namespace ui {
         }
     };
 
+    struct MainWindow {
+        GLFWwindow* win = nullptr;
+        int width = 1000;
+        int height = 800;
+        GLFWwindow* create() {
+            win = glfwCreateWindow(width, height, resources::programName, nullptr, nullptr);
+            return win;
+        }
+        void reshape(int w, int h) {
+            width = w;
+            height = h;
+        }
+        void close() const {
+            if (win) {
+                glfwSetWindowShouldClose(win, GL_TRUE);
+            }
+        }
+        void saveState(Workspace& ws) const {
+            auto& state = ws.mainWindow;
+            state.width = width;
+            state.height = height;
+        }
+        void restoreState(const Workspace& ws) {
+            auto& state = ws.mainWindow;
+            width = state.width;
+            height = state.height;
+        }
+    };
+
     struct MainMenuBar {
         function<void()> quit;
         function<void()> openFile;
@@ -366,14 +395,16 @@ namespace ui {
                 ImGui::End();
             }
         }
-        void saveState(FolderWindowState& state) const {
+        void saveState(Workspace& ws) const {
+            auto& state = ws.folderWindow;
             state.folder = toUTF8(folder.path);
             state.files.reserve(files.size());
             for (auto& item : files) {
                 state.files.push_back(toUTF8(item.path));
             }
         }
-        void restoreState(const FolderWindowState& state) {
+        void restoreState(const Workspace& ws) {
+            auto& state = ws.folderWindow;
             if (!state.folder.empty()) {
                 openFolder(state.folder);
             }
@@ -458,6 +489,7 @@ namespace ui {
 Render render;
 Player player0;
 Player player1;
+ui::MainWindow mainWindow;
 ui::MainMenuBar mainMenuBar;
 ui::FolderWindow folderWindow("##folderWindow");
 ui::FrameWindow frameWindow_0("Frame 0", "##frameWindow_01");
@@ -505,7 +537,10 @@ static void cmd::openFolder() {
     }
 }
 static void cmd::quitProgram() {
-
+    mainWindow.close();
+}
+static void reshapeCallback(GLFWwindow*, int w, int h) {
+    mainWindow.reshape(w, h);
 }
 static void mouseCallback(FrameRender& frame, int mx, int my) {
   
@@ -545,7 +580,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
 
     const KeyEvent& key = keyboard::create(keyCode, action, mods);
     if (key.is(ESC)) {
-        glfwSetWindowShouldClose(window, GL_TRUE);
+        cmd::quitProgram();
     }
     else if (key.is(R)) {
         std::cout << "Reload shaders" << std::endl;
@@ -588,6 +623,7 @@ static void initWindow(GLFWwindow* window) {
     glfwWindowHint(GLFW_DEPTH_BITS, 16);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
     glfwSetKeyCallback(window, keyCallback);
+    glfwSetFramebufferSizeCallback(window, reshapeCallback);
     glfwSetWindowPos(window, 400, 200);
     glfwSwapInterval(1);
     glfwSetTime(0.0);
@@ -600,6 +636,7 @@ static void initImGui(GLFWwindow* window) {
     ImGui_ImplOpenGL3_Init();
 
     ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.Fonts->AddFontFromFileTTF(resources::font, 14);
     io.Fonts->Build();   
 }
@@ -608,19 +645,17 @@ static void destroyImGui() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
-static void saveWorkspace() {
-    Workspace ws;
-    folderWindow.saveState(ws.folderWindow);
+static void saveWorkspace(Workspace& ws) {
+    mainWindow.saveState(ws);
+    folderWindow.saveState(ws);
     ws.save(resources::workspace);
 }
-static void restoreWorkspace() {
-    Workspace ws;
-    bool ok = ws.load(resources::workspace);
-    if (!ok) {
-        return;
+static void loadWorkspace(Workspace& ws) {
+   
+    if (ws.load(resources::workspace)) {
+        mainWindow.restoreState(ws);
+        folderWindow.restoreState(ws);
     }
-
-    folderWindow.restoreState(ws.folderWindow);
 
    /* fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
     fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);*/
@@ -695,25 +730,22 @@ void ui::FrameController::clearDrawn() {
     frameRender.clearDrawn();
 }
 
-/*
-    Todo:
-        remember opened folder
-*/
-
 int main(int argc, char* argv[]) {
     if (!glfwInit()) {
         std::cout << "glfwInit error" << std::endl;
         return -1;
     }
 
-    int windowWidth = 1500;
-    int windowHeight = 900;
-    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Frames", nullptr, nullptr);
+    Workspace ws;
+    loadWorkspace(ws);
+    
+    GLFWwindow* window = mainWindow.create();
     if (!window) {
         std::cout << "glfwCreateWindow error" << std::endl;
         glfwTerminate();
         return -1;
     }
+   
     if (!loadGLES(window)) {
         glfwTerminate();
         return -1;
@@ -729,13 +761,12 @@ int main(int argc, char* argv[]) {
     mainMenuBar.openFolder = []() {     
         cmd::openFolder();
     };
-    mainMenuBar.quit = [&window]() {
-        glfwSetWindowShouldClose(window, GL_TRUE);
+    mainMenuBar.quit = []() {
+        cmd::quitProgram();
     };
     fc[0].linkChildreen();
     fc[1].linkChildreen();
 
-    restoreWorkspace();
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -759,7 +790,7 @@ int main(int argc, char* argv[]) {
         glfwPollEvents();
     }
 
-    saveWorkspace();
+    saveWorkspace(ws);
 
     player0.stop();
     player1.stop();

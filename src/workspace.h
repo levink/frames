@@ -2,6 +2,10 @@
 #include <string>
 #include <vector>
 
+struct MainWindowState {
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
 
 struct FolderWindowState {
     std::string folder;
@@ -9,7 +13,8 @@ struct FolderWindowState {
 };
 
 struct Workspace {
-    const uint32_t formatVersion = 1;
+    const uint32_t formatVersion = 2;
+    MainWindowState mainWindow;
     FolderWindowState folderWindow;
 
     void save(const char* path);

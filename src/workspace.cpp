@@ -51,6 +51,8 @@ void Workspace::save(const char* path) {
 
 	auto writer = BinaryWriter(file);
 	writer.putUInt32(formatVersion);
+	writer.putUInt32(mainWindow.width);
+	writer.putUInt32(mainWindow.height);
 	writer.putString(folderWindow.folder);
 	writer.putUInt64(folderWindow.files.size());
 	for (const auto& item : folderWindow.files) {
@@ -70,8 +72,10 @@ bool Workspace::load(const char* path) {
 		return false;
 	}
 
-	reader.getString(folderWindow.folder);
+	mainWindow.width = reader.getUInt32();
+	mainWindow.height = reader.getUInt32();
 
+	reader.getString(folderWindow.folder);
 	auto size = reader.getUInt64();
 	folderWindow.files.resize(size);
 	for (size_t i = 0; i < size; i++) {
