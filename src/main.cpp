@@ -273,6 +273,7 @@ namespace ui {
         char searchBuffer[32] = { 0 };
         list<FileItem> files;
         TreeNode folder;
+        bool needCloseFolder = false;
 
     public:
         void openFolder(const string& pathUTF8) {
@@ -297,6 +298,13 @@ namespace ui {
                 folder.path = path;
                 folder.name = toUTF8(path.filename());
             }
+        }
+        void closeFolder() {
+            folder.folder = false;
+            folder.loaded = false;
+            folder.expanded = false;
+            folder.path.clear();
+            folder.name.clear();
         }
         void openFile(const string& pathUTF8) {
             fs::path path = fs::u8path(pathUTF8);
@@ -367,7 +375,6 @@ namespace ui {
                 rightVideo->draw();
             }
         }
-
         void saveState(Workspace& ws) const {
             auto& state = ws.folderWindow;
             state.folder = toUTF8(folder.path);
@@ -407,13 +414,23 @@ namespace ui {
             };
             std::stable_sort(parent.childreen.begin(), parent.childreen.end(), foldersOnTop);
         }
-        void showNode(TreeNode& node) {
+        void drawNode(TreeNode& node) {
             ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesNone;
             if (node.expanded) {
                 base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
+            bool isTopLevel = (&node == &folder);
+            auto rx = isTopLevel ? ImGui::GetContentRegionAvail().x : 0.f;
             node.expanded = ImGui::TreeNodeEx(node.name.c_str(), base_flags);
+            if (isTopLevel) {
+                ImGui::SameLine(rx - ImGui::GetStyle().WindowPadding.x);
+                if (ImGui::SmallButton("X")) { 
+                    needCloseFolder = true;
+                }
+                ImGui::SetItemTooltip("Close");
+            }
+
             if (node.expanded) {
                 if (node.folder && !node.loaded) {
                     node.loaded = true;
@@ -421,15 +438,15 @@ namespace ui {
                 }
                 for (auto& child : node.childreen) {
                     if (child.folder) {
-                        showNode(child);
+                        drawNode(child);
                     } else {
-                        showFile(child);
+                        drawFile(child);
                     }
                 }
                 ImGui::TreePop();
             }
         }
-        void showFile(TreeNode& node) {
+        void drawFile(TreeNode& node) {
             ImGui::Selectable(node.name.c_str());
             setDragDrop(&node.path, node.name);
         }
@@ -484,7 +501,7 @@ namespace ui {
                     if (ImGui::SmallButton("X")) {
                         itemForDelete = &item;
                     }
-                    ImGui::SetItemTooltip("Remove");
+                    ImGui::SetItemTooltip("Close");
                     ImGui::PopID();
                 }
                 ImGui::EndGroup();
@@ -504,11 +521,15 @@ namespace ui {
             }
 
             if (hasFolder) {
-                showNode(folder);
-            }
-            else {
+                drawNode(folder);
+            } else {
                 ImGui::Spacing();
                 if (ImGui::Button("Open Folder", btnSize)) { cmd::openFolder(); }
+            }
+
+            if (needCloseFolder) {
+                needCloseFolder = false;
+                closeFolder();
             }
         }
     };
@@ -686,12 +707,15 @@ static void destroyImGui() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
-static void saveWorkspace(Workspace& ws) {
+static void saveWorkspace() {
+    Workspace ws;
     mainWindow.saveState(ws);
     folderWindow.saveState(ws);
     ws.save(resources::workspace);
 }
-static void loadWorkspace(Workspace& ws) {
+static void loadWorkspace() {
+
+    Workspace ws;
    
     if (ws.load(resources::workspace)) {
         mainWindow.restoreState(ws);
@@ -785,8 +809,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    Workspace ws;
-    loadWorkspace(ws);
+    loadWorkspace();
     
     GLFWwindow* window = mainWindow.create();
     if (!window) {
@@ -827,8 +850,7 @@ int main(int argc, char* argv[]) {
         glfwPollEvents();
     }
 
-    saveWorkspace(ws);
-
+    saveWorkspace();
     player0.stop();
     player1.stop();
     render.destroyFrames();
