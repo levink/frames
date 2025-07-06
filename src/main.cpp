@@ -135,39 +135,12 @@ namespace ui {
         }
     };
 
-    struct MainMenuBar {
-        function<void()> quit;
-        function<void()> openFile;
-        function<void()> openFolder;
-        void show() {
-            if (ImGui::BeginMainMenuBar())
-            {
-                if (ImGui::BeginMenu("File")) {
-                    if (ImGui::MenuItem("Open File", "Ctrl+O")) { openFile(); }
-                    if (ImGui::MenuItem("Open Folder", "Ctrl+K, O")) { openFolder(); }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Quit", "Alt+F4")) { quit(); }
-                    ImGui::EndMenu();
-                }
-                if (ImGui::BeginMenu("Edit")) {
-                    if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-                    if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {} // Disabled item
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Cut", "CTRL+X")) {}
-                    if (ImGui::MenuItem("Copy", "CTRL+C")) {}
-                    if (ImGui::MenuItem("Paste", "CTRL+V")) {}
-                    ImGui::EndMenu();
-                }
-                ImGui::EndMainMenuBar();
-            }
-        }
-    };
-
     struct FrameWindow {
         string id;
         char name[128];
         bool opened;
         bool hovered;
+        ImTextureID textureId;
         Viewport viewPort;
         Slider slider;
         function<void(bool)> hoverFn;
@@ -175,11 +148,13 @@ namespace ui {
         function<void(float, bool)> slideFn;
         function<void(const Viewport&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
+        function<void(void)> closeFn;
 
         explicit FrameWindow(const char* name, const char* id) : 
             id(id), 
-            opened(true), 
-            hovered(false) {
+            opened(false), 
+            hovered(false),
+            textureId(ImTextureID_Invalid) {
             setName(name);
         }
         void setName(const char* label) {
@@ -189,26 +164,44 @@ namespace ui {
         void setProgress(float progress) {
             slider.progress = progress;
         }
-        void show(const ImTextureRef& texture) {
-          
-            //ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
-            //ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
-            //ImGui::SetNextWindowBgAlpha(0.1f);
+        void setTextureID(const ImTextureID& value) {
+            textureId = value;
+            opened = (textureId != ImTextureID_Invalid);
+        }
+        void draw() {
+            bool hasVideo = textureId != ImTextureID_Invalid;
+            bool openedPrevFrame = opened;
 
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); //no padding
-            ImGui::Begin(name, &opened, ImGuiWindowFlags_NoCollapse);
+            ImGui::SetNextWindowBgAlpha(0.1f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+
+            auto flags = 
+                ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoMove;
+            if (!opened) {
+                flags |= ImGuiWindowFlags_NoTitleBar;
+            }
+            ImGui::Begin(name, &opened, flags);
 
             auto cursor = ImGui::GetCursorScreenPos();
             auto region = ImGui::GetContentRegionAvail();
+            bool changed = viewPort.update(region);
+            if (changed && reshapeFn) {
+                reshapeFn(viewPort);
+            }
+
+            // video texture (RTT)
+            if (hasVideo) {
+                ImGui::Image(textureId, ImVec2(region.x, region.y), ImVec2(0, 1), ImVec2(1, 0));
+            }
 
             // invisible button
             {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));   
-                bool changed = viewPort.update(region);
-                if (changed && reshapeFn) {
-                    reshapeFn(viewPort);
-                }
-                ImGui::InvisibleButton("full_size_area", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+                ImGui::SetCursorScreenPos(ImVec2(cursor.x, cursor.y));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4)); 
+                ImGui::BeginChild("invisible_btn_parent", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
+                ImGui::InvisibleButton("invisible_btn", ImGui::GetContentRegionAvail(), ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
                 bool itemHovered = ImGui::IsItemHovered();
                 if (hoverFn && hovered != itemHovered) {
                     hovered = itemHovered;
@@ -228,21 +221,15 @@ namespace ui {
                     }
                     ImGui::EndDragDropTarget();
                 }
+                ImGui::EndChild();
                 ImGui::PopStyleVar();
             }
 
-            // video texture (RTT)
-            ImTextureID textureId = texture.GetTexID();
-            if (textureId != ImTextureID_Invalid) {
-                ImGui::SetCursorScreenPos(cursor);
-                ImGui::Image(textureId, region, ImVec2(0, 1), ImVec2(1, 0));
-            }
-            
             // slider
-            {  
+            if (hasVideo) {
                 constexpr int padding = 8;
                 auto cursor = ImGui::GetCursorScreenPos();
-                cursor.y -= ImGui::GetFrameHeightWithSpacing() + padding * 2;
+                cursor.y -= ImGui::GetFrameHeightWithSpacing() + padding * 2 + 4;
                 ImGui::SetCursorScreenPos(cursor);
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
                 ImGui::BeginChild("slider", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
@@ -259,6 +246,10 @@ namespace ui {
 
             ImGui::End();
             ImGui::PopStyleVar();
+
+            if (!opened && openedPrevFrame && closeFn) {
+                closeFn();
+            }
         }
     };
 
@@ -279,14 +270,11 @@ namespace ui {
             list<TreeNode> childreen;
         };
 
-        const char* windowName = nullptr;
-        bool windowOpened = true;
         char searchBuffer[32] = { 0 };
         list<FileItem> files;
         TreeNode folder;
 
     public:
-        explicit FolderWindow(const char* name) : windowName(name) {}
         void openFolder(const string& pathUTF8) {
             fs::path path = fs::u8path(pathUTF8);
             bool exists = fs::exists(path);
@@ -323,78 +311,63 @@ namespace ui {
                 std::move(name)
             });
         }
-        void show() {
-            if (windowOpened) {
-                ImGui::Begin(windowName, &windowOpened,
-                    ImGuiWindowFlags_NoCollapse |
-                    ImGuiWindowFlags_NoTitleBar | 
+        void draw(FrameWindow* leftVideo, FrameWindow* rightVideo) {
+
+            float menuHeight = 0.f;
+            drawMainMenuBar(menuHeight);
+
+            auto workSize = ImGui::GetMainViewport()->WorkSize;
+            auto winPadding = ImGui::GetStyle().WindowPadding;
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::SetNextWindowPos(ImVec2(0, menuHeight), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(workSize);
+            ImGui::SetNextWindowBgAlpha(0.0f);
+
+            ImGui::Begin("FolderWindow", nullptr,
+                ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoInputs |
+                ImGuiWindowFlags_NoDocking |
+                ImGuiWindowFlags_HorizontalScrollbar
+            );
+
+            //Workspace
+            {   
+                ImGui::SetNextWindowBgAlpha(1.0f);
+                ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(workSize.x * 0.5, -1));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, winPadding);
+                ImGui::BeginChild("left_panel", ImVec2(0, 0),
+                    ImGuiChildFlags_Borders |
+                    ImGuiChildFlags_ResizeX,
                     ImGuiWindowFlags_HorizontalScrollbar);
 
-                const auto region = ImGui::GetContentRegionAvail().x;
-                const auto btnSize = ImVec2(region, 0);
-                ImGui::SetNextItemWidth(region);
-                ImGui::InputTextWithHint("##filter", "Search...", searchBuffer, 32);
-                ImGui::Spacing();
+                drawFileTree();
 
-                bool workspaceEmpty = files.empty() && folder.name.empty();
-                if (workspaceEmpty) {
-                    ImGui::Spacing();
-                    if (ImGui::Button("Open Folder", btnSize)) { cmd::openFolder(); }
-                }
-                else {
+                ImGui::EndChild();
+                ImGui::PopStyleVar();
+            }
+            ImGui::SameLine(0.f, 0.f);
+            auto sz = ImGui::GetContentRegionAvail();
+            auto pos = ImGui::GetCursorScreenPos();
+            ImGui::End();
+            ImGui::PopStyleVar();
 
-                    const bool hasFiles = !files.empty();
-                    const bool hasFolder = !folder.name.empty();
+            
+            if (leftVideo) {
+                ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
+                ImGui::SetNextWindowSize(ImVec2(0.5f * sz.x, sz.y), ImGuiCond_Always);
+                leftVideo->draw();
+            }
 
-                    if (hasFiles) {
-
-                        FileItem* itemForDelete = nullptr;
-                        ImGuiStyle& style = ImGui::GetStyle();
-                        auto group_start = ImGui::GetCursorPosX() + style.FramePadding.x;
-                        auto group_size = ImVec2(region - 2 * style.FramePadding.x, 0);
-                        auto btn_offset = group_size.x - style.ItemSpacing.x - style.FramePadding.x;
-
-                        ImGui::SetCursorPosX(group_start);
-                        ImGui::BeginGroup();
-                        for (int id = 0; auto& item : files) {
-                            ImGui::PushID(id++);
-                            ImGui::SetNextItemAllowOverlap();
-                            ImGui::Selectable(item.name.c_str(), false, 0, group_size);
-                            setDragDrop(&item.path, item.name);
-
-                            ImGui::SameLine(btn_offset);
-                            if (ImGui::SmallButton("X")) {
-                                itemForDelete = &item;
-                            }
-                            ImGui::SetItemTooltip("Remove");
-                            ImGui::PopID();
-                        }
-                        ImGui::EndGroup();
-
-                        if (itemForDelete) {
-                            files.remove_if([itemForDelete](FileItem& node) {
-                                return itemForDelete == &node;
-                            });
-                        }
-
-                    }
-
-                    if (hasFiles && hasFolder) {
-                        ImGui::Spacing();
-                        ImGui::Separator();
-                        ImGui::Spacing();
-                    }
-                    
-                    if (hasFolder) {
-                        showNode(folder);
-                    } else {
-                        ImGui::Spacing();
-                        if (ImGui::Button("Open Folder", btnSize)) { cmd::openFolder(); }
-                    }
-                }
-                ImGui::End();
+            if (rightVideo) {
+                ImGui::SetNextWindowPos(ImVec2(pos.x + 0.5f * sz.x, pos.y), ImGuiCond_Always);
+                ImGui::SetNextWindowSize(ImVec2(0.5 * sz.x, sz.y), ImGuiCond_Always);
+                rightVideo->draw();
             }
         }
+
         void saveState(Workspace& ws) const {
             auto& state = ws.folderWindow;
             state.folder = toUTF8(folder.path);
@@ -468,17 +441,87 @@ namespace ui {
                 ImGui::EndDragDropSource();
             }
         }
+
+        void drawMainMenuBar(float& height) {
+            if (ImGui::BeginMainMenuBar()) {
+                if (ImGui::BeginMenu("File")) {
+                    if (ImGui::MenuItem("Open File", "Ctrl+O")) { cmd::openFile(); }
+                    if (ImGui::MenuItem("Open Folder", "Ctrl+K, O")) { cmd::openFolder(); }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Quit", "Alt+F4")) { cmd::quitProgram(); }
+                    ImGui::EndMenu();
+                }
+                height = ImGui::GetWindowSize().y;
+                ImGui::EndMainMenuBar();
+            }
+        }
+        void drawFileTree() {
+            const auto regionX = ImGui::GetContentRegionAvail().x;
+            const auto btnSize = ImVec2(regionX, 0);
+            ImGui::SetNextItemWidth(regionX);
+            ImGui::InputTextWithHint("##filter", "Search...", searchBuffer, 32);
+            ImGui::Spacing();
+
+            const bool hasFiles = !files.empty();
+            const bool hasFolder = !folder.name.empty();
+            if (hasFiles) {
+
+                FileItem* itemForDelete = nullptr;
+                ImGuiStyle& style = ImGui::GetStyle();
+                auto group_start = ImGui::GetCursorPosX() + style.FramePadding.x;
+                auto group_size = ImVec2(regionX - 2 * style.FramePadding.x, 0);
+                auto btn_offset = group_size.x - style.ItemSpacing.x - style.FramePadding.x;
+
+                ImGui::SetCursorPosX(group_start);
+                ImGui::BeginGroup();
+                for (int id = 0; auto& item : files) {
+                    ImGui::PushID(id++);
+                    ImGui::SetNextItemAllowOverlap();
+                    ImGui::Selectable(item.name.c_str(), false, 0, group_size);
+                    setDragDrop(&item.path, item.name);
+
+                    ImGui::SameLine(btn_offset);
+                    if (ImGui::SmallButton("X")) {
+                        itemForDelete = &item;
+                    }
+                    ImGui::SetItemTooltip("Remove");
+                    ImGui::PopID();
+                }
+                ImGui::EndGroup();
+
+                if (itemForDelete) {
+                    files.remove_if([itemForDelete](FileItem& node) {
+                        return itemForDelete == &node;
+                    });
+                }
+
+            }
+
+            if (hasFiles && hasFolder) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+            }
+
+            if (hasFolder) {
+                showNode(folder);
+            }
+            else {
+                ImGui::Spacing();
+                if (ImGui::Button("Open Folder", btnSize)) { cmd::openFolder(); }
+            }
+        }
     };
 
     struct FrameController {
         Player& player;
         FrameRender& frameRender;
         FrameWindow& frameWindow;
-        ImTextureRef frameTexture;
         bool active = true;
         void linkChildreen();
         void update(const time_point& now);
         void openFile(const string& path);
+        void closeFile();
         void togglePause();
         void seekLeft();
         void seekRight();
@@ -490,10 +533,9 @@ Render render;
 Player player0;
 Player player1;
 ui::MainWindow mainWindow;
-ui::MainMenuBar mainMenuBar;
-ui::FolderWindow folderWindow("##folderWindow");
-ui::FrameWindow frameWindow_0("Frame 0", "##frameWindow_01");
-ui::FrameWindow frameWindow_1("Frame 1", "##frameWindow_1");
+ui::FolderWindow folderWindow; //todo: refactor + rename? Cause very clever object
+ui::FrameWindow frameWindow_0("Frame 0", "##frameWindow_12");
+ui::FrameWindow frameWindow_1("Frame 1", "##frameWindow_22");
 ui::FrameController fc[2] = {
     { player0, render.frames[0], frameWindow_0 },
     { player1, render.frames[1], frameWindow_1 }
@@ -636,7 +678,6 @@ static void initImGui(GLFWwindow* window) {
     ImGui_ImplOpenGL3_Init();
 
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.Fonts->AddFontFromFileTTF(resources::font, 14);
     io.Fonts->Build();   
 }
@@ -668,8 +709,7 @@ void ui::FrameController::linkChildreen() {
     frameWindow.hoverFn = [this](bool hovered) {
         if (hovered) {
             frameRender.showCursor(true);
-        }
-        else {
+        } else {
             frameRender.showCursor(false);
             frameRender.drawStop();
         }
@@ -687,7 +727,10 @@ void ui::FrameController::linkChildreen() {
     frameWindow.acceptDropFn = [this](const string& path) {
         this->openFile(path);
     };
-    frameTexture = ImTextureRef(frameRender.fb.tid);
+    frameWindow.closeFn = [this]() {
+        this->closeFile();
+    };
+
 }
 void ui::FrameController::update(const time_point& now) {
     if (player.hasUpdate(now)) {
@@ -702,12 +745,18 @@ void ui::FrameController::openFile(const string& path) {
         const auto& info = player.info;
         frameRender.clearDrawn();
         frameRender.createTexture(info.width, info.height);
+        frameWindow.setTextureID(frameRender.fb.tid);
         frameWindow.setName(fileName.c_str());
         cout << "File open - ok: " << path << endl;
     }
     else {
         std::cout << "File open - error" << std::endl;
     }
+}
+void ui::FrameController::closeFile() {
+    player.stop();
+    frameRender.clearDrawn();
+    frameWindow.setTextureID(ImTextureID_Invalid);
 }
 void ui::FrameController::togglePause() {
     if (active) {
@@ -755,15 +804,6 @@ int main(int argc, char* argv[]) {
     initWindow(window);
     initImGui(window);
     
-    mainMenuBar.openFile = []() {
-        cmd::openFile();
-    };
-    mainMenuBar.openFolder = []() {     
-        cmd::openFolder();
-    };
-    mainMenuBar.quit = []() {
-        cmd::quitProgram();
-    };
     fc[0].linkChildreen();
     fc[1].linkChildreen();
 
@@ -778,10 +818,7 @@ int main(int argc, char* argv[]) {
         glClear(GL_COLOR_BUFFER_BIT);
 
         ui::newFrame();
-        mainMenuBar.show();
-        folderWindow.show();
-        frameWindow_0.show(fc[0].frameTexture);
-        frameWindow_1.show(fc[1].frameTexture);
+        folderWindow.draw(&frameWindow_0, &frameWindow_1);
         render.render();
         ui::render();
 
