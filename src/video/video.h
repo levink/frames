@@ -73,6 +73,10 @@ namespace video {
     };
 
     class FrameLoader {
+    public:
+        static constexpr size_t cacheSize = 5;
+    
+    private:
         std::thread t;
         std::mutex mtx;
         std::condition_variable cv;
@@ -114,7 +118,7 @@ namespace video {
     };
 
     struct FrameQueue {
-        static constexpr size_t capacity = 5;
+        static constexpr size_t capacity = 10;
         static constexpr size_t deltaMin = 1;
 
         CircleBuffer<RGBFrame*, capacity, nullptr> items;

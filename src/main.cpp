@@ -542,13 +542,22 @@ static void ui::draw() {
     ImGui::End();
     ImGui::PopStyleVar();
 
-    ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(0.5f * sz.x, sz.y), ImGuiCond_Always);
-    frameWindow_0.draw();
 
-    ImGui::SetNextWindowPos(ImVec2(pos.x + 0.5f * sz.x, pos.y), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(0.5 * sz.x, sz.y), ImGuiCond_Always);
-    frameWindow_1.draw();
+    bool singleMode = true;
+    if (singleMode) {
+        ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(sz.x, sz.y), ImGuiCond_Always);
+        frameWindow_0.draw();
+    }
+    else {
+        ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(0.5f * sz.x, sz.y), ImGuiCond_Always);
+        frameWindow_0.draw();
+
+        ImGui::SetNextWindowPos(ImVec2(pos.x + 0.5f * sz.x, pos.y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(0.5 * sz.x, sz.y), ImGuiCond_Always);
+        frameWindow_1.draw();
+    }
 }
 static void ui::render() {
     //ImGui::ShowDemoWindow();

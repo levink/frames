@@ -479,12 +479,12 @@ namespace video {
                     }
                     prevCache.erase(std::remove_if(prevCache.begin(), prevCache.end(), [](RGBFrame* item) {
                         return item == nullptr;
-                        }), prevCache.end());
+                    }), prevCache.end());
 
                     // cache.sortByPTS();
                     std::sort(prevCache.begin(), prevCache.end(), [](RGBFrame* left, RGBFrame* right) {
                         return left->pts < right->pts;
-                        });
+                    });
                 }
                 else {
                     // Not found. Need clear cache
@@ -661,7 +661,10 @@ namespace video {
         loader.stop();
 
         if (loader.open(fileName, info)) {
-            loader.createFrames(10, info.width, info.height);
+            auto count =
+                FrameQueue::capacity +
+                FrameLoader::cacheSize;
+            loader.createFrames(count, info.width, info.height);
             loader.start();
             lastUpdate = std::chrono::steady_clock::now();
             ps = PlayState();
@@ -677,11 +680,18 @@ namespace video {
         loader.stop();
     }
     void Player::seekProgress(float progress, bool hold) {
+        if (!ps.started) {
+            return;
+        }
         ps.hold = hold;
         auto pts = info.progressToPts(progress);
         seekPts(pts);
     }
     void Player::seekLeft() {
+        if (!ps.started) {
+            return;
+        }
+
         if (ps.paused) {
             ps.update = true;
             frameQ.seekPrevFrame(loader);
@@ -695,6 +705,10 @@ namespace video {
         }
     }
     void Player::seekRight() {
+        if (!ps.started) {
+            return;
+        }
+
         if (ps.paused) {
             ps.update = true;
             frameQ.seekNextFrame(loader);
@@ -708,6 +722,10 @@ namespace video {
         }
     }
     void Player::seekPts(int64_t pts) {
+        if (!ps.started) {
+            return;
+        }
+
         // flush frameQ
         frameQ.flush(loader);
 
@@ -720,6 +738,10 @@ namespace video {
         ps.progress = info.calcProgress(pts);
     }
     void Player::pause(bool paused) {
+        if (!ps.started) {
+            return;
+        }
+
         if (paused) {
             ps.paused = true;
             ps.update = true;
@@ -732,13 +754,12 @@ namespace video {
         }
     }
     bool Player::hasUpdate(const time_point& now) {
-        using std::chrono::microseconds;
-        using std::chrono::duration_cast;
-        
         if (!ps.started) {
             return false;
         }
 
+        using std::chrono::microseconds;
+        using std::chrono::duration_cast;
         frameQ.fillFrom(loader);
             
         if (!ps.paused && !ps.hold) {
