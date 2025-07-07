@@ -11,5 +11,5 @@ struct Render {
 	void destroyFrames();
 	void createFrameBuffers();
 	void destroyFrameBuffers();
-	void render();
+	void renderFrames();
 };

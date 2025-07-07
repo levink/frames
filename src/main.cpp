@@ -40,21 +40,6 @@ namespace ui {
         }
     }
 
-    static void newFrame() {
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-    }
-
-    static void render() {
-        //ImGui::ShowDemoWindow();
-        //ImGui::DebugTextEncoding("Привет");
-        //ImGui::ShowMetricsWindow();
-
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    }
-
     struct Slider {
         float progress = 0;
         bool hold = false;
@@ -107,9 +92,11 @@ namespace ui {
     };
 
     struct MainWindow {
+    private:
         GLFWwindow* win = nullptr;
         int width = 1000;
         int height = 800;
+    public:
         GLFWwindow* create() {
             win = glfwCreateWindow(width, height, resources::programName, nullptr, nullptr);
             return win;
@@ -124,12 +111,12 @@ namespace ui {
             }
         }
         void saveState(Workspace& ws) const {
-            auto& state = ws.mainWindow;
+            auto& state = ws.main;
             state.width = width;
             state.height = height;
         }
         void restoreState(const Workspace& ws) {
-            auto& state = ws.mainWindow;
+            auto& state = ws.main;
             width = state.width;
             height = state.height;
         }
@@ -253,7 +240,7 @@ namespace ui {
         }
     };
 
-    struct FolderWindow {
+    struct FileTreeWindow {
     private:
 
         struct FileItem {
@@ -319,64 +306,8 @@ namespace ui {
                 std::move(name)
             });
         }
-        void draw(FrameWindow* leftVideo, FrameWindow* rightVideo) {
-
-            float menuHeight = 0.f;
-            drawMainMenuBar(menuHeight);
-
-            auto workSize = ImGui::GetMainViewport()->WorkSize;
-            auto winPadding = ImGui::GetStyle().WindowPadding;
-
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-            ImGui::SetNextWindowPos(ImVec2(0, menuHeight), ImGuiCond_Once);
-            ImGui::SetNextWindowSize(workSize);
-            ImGui::SetNextWindowBgAlpha(0.0f);
-
-            ImGui::Begin("FolderWindow", nullptr,
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoTitleBar |
-                ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoInputs |
-                ImGuiWindowFlags_NoDocking |
-                ImGuiWindowFlags_HorizontalScrollbar
-            );
-
-            //Workspace
-            {   
-                ImGui::SetNextWindowBgAlpha(1.0f);
-                ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(workSize.x * 0.5, -1));
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, winPadding);
-                ImGui::BeginChild("left_panel", ImVec2(0, 0),
-                    ImGuiChildFlags_Borders |
-                    ImGuiChildFlags_ResizeX,
-                    ImGuiWindowFlags_HorizontalScrollbar);
-
-                drawFileTree();
-
-                ImGui::EndChild();
-                ImGui::PopStyleVar();
-            }
-            ImGui::SameLine(0.f, 0.f);
-            auto sz = ImGui::GetContentRegionAvail();
-            auto pos = ImGui::GetCursorScreenPos();
-            ImGui::End();
-            ImGui::PopStyleVar();
-
-            
-            if (leftVideo) {
-                ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
-                ImGui::SetNextWindowSize(ImVec2(0.5f * sz.x, sz.y), ImGuiCond_Always);
-                leftVideo->draw();
-            }
-
-            if (rightVideo) {
-                ImGui::SetNextWindowPos(ImVec2(pos.x + 0.5f * sz.x, pos.y), ImGuiCond_Always);
-                ImGui::SetNextWindowSize(ImVec2(0.5 * sz.x, sz.y), ImGuiCond_Always);
-                rightVideo->draw();
-            }
-        }
         void saveState(Workspace& ws) const {
-            auto& state = ws.folderWindow;
+            auto& state = ws.fileTree;
             state.folder = toUTF8(folder.path);
             state.files.reserve(files.size());
             for (auto& item : files) {
@@ -384,7 +315,7 @@ namespace ui {
             }
         }
         void restoreState(const Workspace& ws) {
-            auto& state = ws.folderWindow;
+            auto& state = ws.fileTree;
             if (!state.folder.empty()) {
                 openFolder(state.folder);
             }
@@ -394,85 +325,7 @@ namespace ui {
                 openFile(*it);
             }
         }
-
-    private:
-        void loadChildreen(TreeNode& parent) {
-            parent.childreen.clear();
-            for (const auto& child : fs::directory_iterator(parent.path)) {
-                auto& childPath = child.path();
-                TreeNode node;
-                node.folder = fs::is_directory(childPath);
-                node.loaded = false;
-                node.expanded = false;
-                node.path = childPath;
-                node.name = toUTF8(childPath.filename());
-                parent.childreen.push_back(node);
-            }
-
-            auto foldersOnTop = [](const TreeNode& left, const TreeNode& right) {
-                return left.folder > right.folder;
-            };
-            std::stable_sort(parent.childreen.begin(), parent.childreen.end(), foldersOnTop);
-        }
-        void drawNode(TreeNode& node) {
-            ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesNone;
-            if (node.expanded) {
-                base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
-            }
-
-            bool isTopLevel = (&node == &folder);
-            auto rx = isTopLevel ? ImGui::GetContentRegionAvail().x : 0.f;
-            node.expanded = ImGui::TreeNodeEx(node.name.c_str(), base_flags);
-            if (isTopLevel) {
-                ImGui::SameLine(rx - ImGui::GetStyle().WindowPadding.x);
-                if (ImGui::SmallButton("X")) { 
-                    needCloseFolder = true;
-                }
-                ImGui::SetItemTooltip("Close");
-            }
-
-            if (node.expanded) {
-                if (node.folder && !node.loaded) {
-                    node.loaded = true;
-                    loadChildreen(node);
-                }
-                for (auto& child : node.childreen) {
-                    if (child.folder) {
-                        drawNode(child);
-                    } else {
-                        drawFile(child);
-                    }
-                }
-                ImGui::TreePop();
-            }
-        }
-        void drawFile(TreeNode& node) {
-            ImGui::Selectable(node.name.c_str());
-            setDragDrop(&node.path, node.name);
-        }
-        void setDragDrop(fs::path* path, string& tooltip) {
-            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
-                auto data = dragDrop::packPath(path);
-                ImGui::SetDragDropPayload(dragDrop::PATH_TAG, &data, sizeof(data), ImGuiCond_Once);
-                ImGui::Text(tooltip.c_str());
-                ImGui::EndDragDropSource();
-            }
-        }
-
-        void drawMainMenuBar(float& height) {
-            if (ImGui::BeginMainMenuBar()) {
-                if (ImGui::BeginMenu("File")) {
-                    if (ImGui::MenuItem("Open File", "Ctrl+O")) { cmd::openFile(); }
-                    if (ImGui::MenuItem("Open Folder", "Ctrl+K, O")) { cmd::openFolder(); }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Quit", "Alt+F4")) { cmd::quitProgram(); }
-                    ImGui::EndMenu();
-                }
-                height = ImGui::GetWindowSize().y;
-                ImGui::EndMainMenuBar();
-            }
-        }
-        void drawFileTree() {
+        void draw() {
             const auto regionX = ImGui::GetContentRegionAvail().x;
             const auto btnSize = ImVec2(regionX, 0);
             ImGui::SetNextItemWidth(regionX);
@@ -532,6 +385,69 @@ namespace ui {
                 closeFolder();
             }
         }
+    private:
+        void loadChildreen(TreeNode& parent) {
+            parent.childreen.clear();
+            for (const auto& child : fs::directory_iterator(parent.path)) {
+                auto& childPath = child.path();
+                TreeNode node;
+                node.folder = fs::is_directory(childPath);
+                node.loaded = false;
+                node.expanded = false;
+                node.path = childPath;
+                node.name = toUTF8(childPath.filename());
+                parent.childreen.push_back(node);
+            }
+
+            auto foldersOnTop = [](const TreeNode& left, const TreeNode& right) {
+                return left.folder > right.folder;
+            };
+            std::stable_sort(parent.childreen.begin(), parent.childreen.end(), foldersOnTop);
+        }
+        void drawNode(TreeNode& node) {
+            ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_DrawLinesNone;
+            if (node.expanded) {
+                base_flags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
+
+            bool isTopLevel = (&node == &folder);
+            auto rx = isTopLevel ? ImGui::GetContentRegionAvail().x : 0.f;
+            node.expanded = ImGui::TreeNodeEx(node.name.c_str(), base_flags);
+            if (isTopLevel) {
+                ImGui::SameLine(rx - ImGui::GetStyle().WindowPadding.x);
+                if (ImGui::SmallButton("X")) {
+                    needCloseFolder = true;
+                }
+                ImGui::SetItemTooltip("Close");
+            }
+
+            if (node.expanded) {
+                if (node.folder && !node.loaded) {
+                    node.loaded = true;
+                    loadChildreen(node);
+                }
+                for (auto& child : node.childreen) {
+                    if (child.folder) {
+                        drawNode(child);
+                    } else {
+                        drawFile(child);
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+        void drawFile(TreeNode& node) {
+            ImGui::Selectable(node.name.c_str());
+            setDragDrop(&node.path, node.name);
+        }
+        void setDragDrop(fs::path* path, string& tooltip) {
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+                auto data = dragDrop::packPath(path);
+                ImGui::SetDragDropPayload(dragDrop::PATH_TAG, &data, sizeof(data), ImGuiCond_Once);
+                ImGui::Text(tooltip.c_str());
+                ImGui::EndDragDropSource();
+            }
+        }
     };
 
     struct FrameController {
@@ -548,20 +464,100 @@ namespace ui {
         void seekRight();
         void clearDrawn();
     };
+
+    static void newFrame();
+    static void render();
+    static void draw();
+    static void drawMainMenuBar(float& height) {
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("File")) {
+                if (ImGui::MenuItem("Open File", "Ctrl+O")) { cmd::openFile(); }
+                if (ImGui::MenuItem("Open Folder", "Ctrl+K, O")) { cmd::openFolder(); }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Quit", "Alt+F4")) { cmd::quitProgram(); }
+                ImGui::EndMenu();
+            }
+            height = ImGui::GetWindowSize().y;
+            ImGui::EndMainMenuBar();
+        }
+    }
 }
 
 Render render;
 Player player0;
 Player player1;
 ui::MainWindow mainWindow;
-ui::FolderWindow folderWindow; //todo: refactor + rename? Cause very clever object
-ui::FrameWindow frameWindow_0("Frame 0", "##frameWindow_12");
-ui::FrameWindow frameWindow_1("Frame 1", "##frameWindow_22");
+ui::FileTreeWindow fileTreeWindow;
+ui::FrameWindow frameWindow_0("Frame 0", "##frameWindow_0");
+ui::FrameWindow frameWindow_1("Frame 1", "##frameWindow_1");
 ui::FrameController fc[2] = {
     { player0, render.frames[0], frameWindow_0 },
     { player1, render.frames[1], frameWindow_1 }
 };
 
+static void ui::newFrame() {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+}
+static void ui::draw() {  
+
+    float menuHeight = 0.f;
+    ui::drawMainMenuBar(menuHeight);
+
+    auto workSize = ImGui::GetMainViewport()->WorkSize;
+    auto winPadding = ImGui::GetStyle().WindowPadding;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::SetNextWindowPos(ImVec2(0, menuHeight), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(workSize);
+    ImGui::SetNextWindowBgAlpha(0.0f);
+    ImGui::Begin("Main", nullptr,
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoInputs |
+        ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_HorizontalScrollbar
+    );
+
+    //FileTree
+    {
+        ImGui::SetNextWindowBgAlpha(1.0f);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(workSize.x * 0.5, -1));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, winPadding);
+        ImGui::BeginChild("FileTree", ImVec2(250, 0),
+            ImGuiChildFlags_Borders |
+            ImGuiChildFlags_ResizeX,
+            ImGuiWindowFlags_HorizontalScrollbar);
+
+        fileTreeWindow.draw();
+
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+    }
+    ImGui::SameLine(0.f, 0.f);
+    auto sz = ImGui::GetContentRegionAvail();
+    auto pos = ImGui::GetCursorScreenPos();
+    ImGui::End();
+    ImGui::PopStyleVar();
+
+    ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(0.5f * sz.x, sz.y), ImGuiCond_Always);
+    frameWindow_0.draw();
+
+    ImGui::SetNextWindowPos(ImVec2(pos.x + 0.5f * sz.x, pos.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(0.5 * sz.x, sz.y), ImGuiCond_Always);
+    frameWindow_1.draw();
+}
+static void ui::render() {
+    //ImGui::ShowDemoWindow();
+    //ImGui::DebugTextEncoding("Привет");
+    //ImGui::ShowMetricsWindow();
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
 
 static bool showNativeFileDialog(string& path, bool folder) {
     static bool opened = false;
@@ -590,13 +586,13 @@ static bool showNativeFileDialog(string& path, bool folder) {
 static void cmd::openFile() {
     string path;
     if (showNativeFileDialog(path, false)) {
-        folderWindow.openFile(path);
+        fileTreeWindow.openFile(path);
     }
 }
 static void cmd::openFolder() {
     string path;
     if (showNativeFileDialog(path, true)) {
-        folderWindow.openFolder(path);
+        fileTreeWindow.openFolder(path);
     }
 }
 static void cmd::quitProgram() {
@@ -710,23 +706,19 @@ static void destroyImGui() {
 static void saveWorkspace() {
     Workspace ws;
     mainWindow.saveState(ws);
-    folderWindow.saveState(ws);
+    fileTreeWindow.saveState(ws);
     ws.save(resources::workspace);
 }
 static void loadWorkspace() {
 
     Workspace ws;
-   
     if (ws.load(resources::workspace)) {
         mainWindow.restoreState(ws);
-        folderWindow.restoreState(ws);
+        fileTreeWindow.restoreState(ws);
     }
 
    /* fc[0].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);
     fc[1].frameRender.setBrush({ 1.f, 0.f, 0.f }, 20.f);*/
-
-    //auto defaultFilePath = "C:/Users/Konst/Desktop/IMG_3504.MOV";
-    //fc[0].openFile(defaultFilePath);
 }
 
 void ui::FrameController::linkChildreen() {
@@ -754,7 +746,6 @@ void ui::FrameController::linkChildreen() {
     frameWindow.closeFn = [this]() {
         this->closeFile();
     };
-
 }
 void ui::FrameController::update(const time_point& now) {
     if (player.hasUpdate(now)) {
@@ -825,11 +816,9 @@ int main(int argc, char* argv[]) {
     render.createShaders();
     render.createFrameBuffers();
     initWindow(window);
-    initImGui(window);
-    
+    initImGui(window);    
     fc[0].linkChildreen();
     fc[1].linkChildreen();
-
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -841,8 +830,8 @@ int main(int argc, char* argv[]) {
         glClear(GL_COLOR_BUFFER_BIT);
 
         ui::newFrame();
-        folderWindow.draw(&frameWindow_0, &frameWindow_1);
-        render.render();
+        ui::draw();
+        render.renderFrames();
         ui::render();
 
         glFlush();

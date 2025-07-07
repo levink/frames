@@ -28,7 +28,7 @@ void Render::destroyFrameBuffers() {
 	frames[0].fb.destroy();
 	frames[1].fb.destroy();
 }
-void Render::render() {
+void Render::renderFrames() {
 	frames[0].render(shaders);
 	frames[1].render(shaders);
 }
