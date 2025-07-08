@@ -128,11 +128,13 @@ namespace ui {
         string id;
         char name[128];
         bool opened;
-        bool hovered;
+        bool frameHovered;
+        bool slideHovered;
         ImTextureID textureId;
         Viewport viewPort;
         Slider slider;
-        function<void(bool)> hoverFn;
+        function<void(bool)> hoverFrameFn;
+        function<void(bool)> hoverSlideFn;
         function<void(int, int)> mouseFn;
         function<void(float, bool)> slideFn;
         function<void(const Viewport&)> reshapeFn;
@@ -142,7 +144,8 @@ namespace ui {
         explicit FrameWindow(const char* name, const char* id) : 
             id(id), 
             opened(false), 
-            hovered(false),
+            frameHovered(false),
+            slideHovered(false),
             textureId(ImTextureID_Invalid) {
             setName(name);
         }
@@ -192,12 +195,14 @@ namespace ui {
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4)); 
                 ImGui::BeginChild("invisible_btn_parent", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
                 ImGui::InvisibleButton("invisible_btn", ImGui::GetContentRegionAvail(), ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-                bool itemHovered = ImGui::IsItemHovered();
-                if (hoverFn && hovered != itemHovered) {
-                    hovered = itemHovered;
-                    hoverFn(hovered);
+                
+                bool hovered = ImGui::IsItemHovered();
+                if (hoverFrameFn && frameHovered != hovered) {
+                    frameHovered = hovered;
+                    hoverFrameFn(hovered);
                 }
-                if (mouseFn && hovered) {
+
+                if (mouseFn && frameHovered) {
                     ImGuiIO& io = ImGui::GetIO();
                     auto localX = io.MousePos.x - cursor.x;
                     auto localY = io.MousePos.y - cursor.y;
@@ -231,6 +236,13 @@ namespace ui {
                 }
                 ImGui::PopItemWidth();
                 ImGui::EndChild();
+
+                bool hovered = ImGui::IsItemHovered();                
+                if (hoverSlideFn && slideHovered != hovered) {
+                    slideHovered = hovered;
+                    hoverSlideFn(hovered);
+                }
+
                 ImGui::PopStyleVar();
             }
 
@@ -457,7 +469,6 @@ namespace ui {
         Player& player;
         FrameRender& frameRender;
         FrameWindow& frameWindow;
-        bool active = true;
         void linkChildreen();
         void update(const time_point& now);
         void openFile(const string& path);
@@ -475,7 +486,7 @@ namespace ui {
     static void drawColorWindow();
     static void drawKeysWindow();
 
-    enum LayoutMode {
+    enum SplitMode {
         Single = 0,
         HSplit = 1,
         VSplit = 2
@@ -486,7 +497,9 @@ namespace ui {
         DrawLines = 1
     };
 
-    int layoutMode = LayoutMode::Single;
+    int splitMode = SplitMode::Single;
+    static void splitScreen(SplitMode mode);
+
     int workMode = WorkMode::MoveVideo;
     int drawLineWidth = 20;
     float drawLineColor[3] = { 1.0f, 0.0f, 0.0f };
@@ -494,6 +507,12 @@ namespace ui {
     static bool openedWorkspace = true;
     static bool openedColor = true;
     static bool openedKeys = false;
+
+    FrameController* seekTarget = nullptr;
+    static void setSeekTarget(FrameController* target, bool hovered);
+    static void seekLeft();
+    static void seekRight();
+    static void togglePause();
 }
 
 Render render;
@@ -557,13 +576,14 @@ static void ui::draw() {
     ImGui::End();
     ImGui::PopStyleVar();
 
-
-    if (layoutMode == LayoutMode::Single) {
+    switch (splitMode) {
+    case SplitMode::Single: {
         ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(sz.x, sz.y), ImGuiCond_Always);
         frameWindow_0.draw();
+        break;
     }
-    else if (layoutMode == LayoutMode::HSplit) {
+    case SplitMode::HSplit: {
         ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(0.5f * sz.x, sz.y), ImGuiCond_Always);
         frameWindow_0.draw();
@@ -571,8 +591,9 @@ static void ui::draw() {
         ImGui::SetNextWindowPos(ImVec2(pos.x + 0.5f * sz.x, pos.y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(0.5 * sz.x, sz.y), ImGuiCond_Always);
         frameWindow_1.draw();
+        break;
     }
-    else if (layoutMode == LayoutMode::VSplit) {
+    case SplitMode::VSplit: {
         ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(sz.x, sz.y * 0.5f), ImGuiCond_Always);
         frameWindow_0.draw();
@@ -580,6 +601,8 @@ static void ui::draw() {
         ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y + sz.y * 0.5f), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(sz.x, sz.y * 0.5), ImGuiCond_Always);
         frameWindow_1.draw();
+        break;
+    }
     }
 
 
@@ -599,33 +622,24 @@ static void ui::drawMainMenuBar(float& height) {
 
         
         if (ImGui::BeginMenu("View")) {
-
-            ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
+            //ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
+            //ImGui::PopItemFlag();
             if (ImGui::MenuItem("Workspace", nullptr, openedWorkspace)) { openedWorkspace = !openedWorkspace; }
-            ImGui::PopItemFlag();
-            
-            ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
             if (ImGui::MenuItem("Color", nullptr, openedColor)) { openedColor = !openedColor; }
-            ImGui::PopItemFlag();
-
-            ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
             if (ImGui::MenuItem("Hot Keys", nullptr, openedKeys)) { openedKeys = !openedKeys; }
-            ImGui::PopItemFlag();
-
             ImGui::EndMenu();
         }
         
 
         if (ImGui::BeginMenu("Split")) {
-            if (ImGui::MenuItem("Single frame", nullptr, ui::layoutMode == LayoutMode::Single)) { 
-                layoutMode = LayoutMode::Single;
-                fc[1].closeFile();
+            if (ImGui::MenuItem("Single frame", nullptr, splitMode == SplitMode::Single)) { 
+                ui::splitScreen(SplitMode::Single);
             }
-            if (ImGui::MenuItem("Left + Right", nullptr, ui::layoutMode == LayoutMode::HSplit)) {
-                layoutMode = LayoutMode::HSplit;
+            if (ImGui::MenuItem("Left + Right", nullptr, splitMode == SplitMode::HSplit)) {
+                ui::splitScreen(SplitMode::HSplit);
             }
-            if (ImGui::MenuItem("Top + Bottom", nullptr, ui::layoutMode == LayoutMode::VSplit)) {
-                layoutMode = LayoutMode::VSplit;
+            if (ImGui::MenuItem("Top + Bottom", nullptr, splitMode == SplitMode::VSplit)) {
+                ui::splitScreen(SplitMode::VSplit);
             }
             ImGui::EndMenu();
         }
@@ -640,7 +654,7 @@ static void ui::drawColorWindow() {
     }
 
     ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_Once);
-    if (ImGui::Begin("Color")) {
+    if (ImGui::Begin("Color", &ui::openedColor)) {
         bool changed = ImGui::DragInt("Width", &ui::drawLineWidth, 0.5f, 2, 50);
         changed |= ImGui::ColorEdit3("Color", ui::drawLineColor);
         if (changed) {
@@ -681,7 +695,51 @@ static void ui::render() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
+static void ui::splitScreen(SplitMode mode) {
+    splitMode = mode;
+    if (mode == SplitMode::Single) {
+        fc[1].closeFile();
+    }
+}
+static void ui::setSeekTarget(FrameController* target, bool hovered) {
+    if (hovered) {
+        seekTarget = target;
+    }
+    else if (seekTarget == target) {
+        seekTarget = nullptr;
+    }
+}
+static void ui::seekLeft() {
+    if (ui::seekTarget) {
+        ui::seekTarget->seekLeft();
+    }
+    else {
+        fc[0].seekLeft(); //todo: longseek?
+        fc[1].seekLeft();
+    }
+    
+}
+static void ui::seekRight() {
+    if (ui::seekTarget) {
+        ui::seekTarget->seekRight();
+    } else {
+        fc[0].seekRight();
+        fc[1].seekRight();
+    }
+}
+static void ui::togglePause() {
+    if (ui::seekTarget) {
+        ui::seekTarget->togglePause();
+    } else {
+        bool paused =
+            !fc[0].player.ps.paused ||
+            !fc[1].player.ps.paused;
+        fc[0].player.pause(paused);
+        fc[1].player.pause(paused);
+    }
+}
 
+//todo: move showNativeFileDialog() out?
 static bool showNativeFileDialog(string& path, bool folder) {
     static bool opened = false;
 
@@ -792,16 +850,13 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         render.reloadShaders();
     }
     else if (key.pressed(SPACE)) {
-        fc[0].togglePause();
-        fc[1].togglePause();
+        ui::togglePause();
     }
     else if (key.pressed(LEFT) || key.pressed(A)) {
-        fc[0].seekLeft(); //todo: longseek
-        fc[1].seekLeft();
+        ui::seekLeft();
     }
     else if (key.pressed(RIGHT) || key.pressed(D)) {
-        fc[0].seekRight();//todo: longseek
-        fc[1].seekRight();
+        ui::seekRight();
     }
     else if (key.pressed(ESC)) {
         fc[0].clearDrawn();
@@ -886,8 +941,11 @@ static void loadWorkspace() {
 }
 
 void ui::FrameController::linkChildreen() {
-    frameWindow.hoverFn = [this](bool hovered) {
+    frameWindow.hoverFrameFn = [this](bool hovered) {
         hoverCallback(frameRender, hovered);
+    };
+    frameWindow.hoverSlideFn = [this](bool hovered) {
+        ui::setSeekTarget(this, hovered);
     };
     frameWindow.mouseFn = [this](int mx, int my) {
         mouseCallback(frameRender, mx, my);
@@ -933,21 +991,14 @@ void ui::FrameController::closeFile() {
     frameWindow.setTextureID(ImTextureID_Invalid);
 }
 void ui::FrameController::togglePause() {
-    if (active) {
-        bool newValue = !(player.ps.paused);
-        player.pause(newValue);
-    }
-
+    bool newValue = !(player.ps.paused);
+    player.pause(newValue);
 }
 void ui::FrameController::seekLeft() {
-    if (active) {
-        player.seekLeft();
-    }
+    player.seekLeft();
 }
 void ui::FrameController::seekRight() {
-    if (active) {
-        player.seekRight();
-    }
+    player.seekRight();
 }
 void ui::FrameController::clearDrawn() {
     frameRender.clearDrawn();
