@@ -180,27 +180,34 @@ glm::vec2 FrameRender::setCursor(int x, int y) {
 	cursor.screen = { x, y };
 	cursor.position = toSceneSpace(x, y);
 
-	if (cursor.visible) {
-		float radius = getLineRadius();
-		cursor.mesh.createPoint(0, cursor.position, radius);
-		cursor.mesh.color = frontColor;
-	}
+	float radius = getLineRadius();
+	cursor.mesh.createPoint(0, cursor.position, radius);
+	cursor.mesh.color = frontColor;
+	
 	return cursor.position;
 }
-void FrameRender::setBrush(const glm::vec3& color, float width) {
+void FrameRender::setBrush(const float color[3], float width) {
 	lineWidth = width;
-	frontColor = color;
+	frontColor[0] = color[0];
+	frontColor[1] = color[1];
+	frontColor[2] = color[2];
 	lineMesh.color = frontColor;
+
+	float radius = getLineRadius();
+	cursor.mesh.createPoint(0, cursor.position, radius);
 	cursor.mesh.color = frontColor;
 }
 void FrameRender::showCursor(bool visible) {
 	cursor.visible = visible;
 }
+void FrameRender::moveCursor(int x, int y) {
+	setCursor(x, y);
+}
 void FrameRender::drawStart(int x, int y) {
 	if (!draw) {
 		draw = true;
 	}
-
+		
 	const auto pos = setCursor(x, y);
 	const auto radius = getLineRadius();
 	const auto meshOffset = lineMesh.vertex.size();
@@ -208,18 +215,19 @@ void FrameRender::drawStart(int x, int y) {
 	line.addPoint(pos, lineMesh);
 	line.updateMesh(lineMesh);
 }
-void FrameRender::drawNext(int x, int y, bool pressed) {
-	cursor.visible = !pressed;
-	
+void FrameRender::drawNext(int x, int y, int mode) {
+
 	auto pos = setCursor(x, y);
 	if (draw && !lines.empty()) {
-
 		auto& line = lines.back();
 		if (line.points.size() < 2) {
 			line.addPoint(pos, lineMesh);
 		} else {
-			//line.addPoint(point, lineMesh);
-			line.moveLast(pos);
+			if (mode == 0) {
+				line.addPoint(pos, lineMesh);
+			} else {
+				line.moveLast(pos);
+			}
 		}
 		line.updateMesh(lineMesh);
 	}

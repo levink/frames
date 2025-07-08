@@ -43,6 +43,9 @@ namespace io::keyboard {
         KEY_6 = GLFW_KEY_6,
         KEY_7 = GLFW_KEY_7,
         KEY_0 = GLFW_KEY_0,
+        
+        
+
         KP_ADD = GLFW_KEY_KP_ADD,
         KP_SUB = GLFW_KEY_KP_SUBTRACT,
         MINUS = GLFW_KEY_MINUS,
@@ -72,6 +75,7 @@ namespace io::keyboard {
     public:
         KeyEvent();
         KeyEvent(int key, int action, int mod);
+        bool pressed(Key key) const;
         bool is(Key key) const;
         bool is(int mod, Key key) const;
         bool is(int modPrev, Key keyPrev, Key key) const;

@@ -66,10 +66,11 @@ struct FrameRender {
     void moveCam(int dx, int dy);
     void zoomCam(float value);
     void render(ShaderContext& shader) const;
-    void setBrush(const glm::vec3& color, float width);
+    void setBrush(const float color[3], float width);
     void showCursor(bool visible);
+    void moveCursor(int x, int y);
     void drawStart(int x, int y);
-    void drawNext(int x, int y, bool pressed);
+    void drawNext(int x, int y, int mode); //todo: use enum for mode?
     void drawStop();
     void clearDrawn();
 

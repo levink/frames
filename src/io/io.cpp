@@ -25,7 +25,7 @@ namespace io::keyboard {
 
     KeyEvent::KeyEvent() : key(0), action(0), mod(0) { }
     KeyEvent::KeyEvent(int key, int action, int mod) : key(key), action(action), mod(mod) { }
-    bool KeyEvent::is(Key key) const {
+    bool KeyEvent::pressed(Key key) const {
         if (this->key != key) {
             return false;
         }
@@ -33,6 +33,9 @@ namespace io::keyboard {
             return false;
         }
         return (mod == Mod::NO);
+    }
+    bool KeyEvent::is(Key key) const {
+        return (this->key == key);
     }
     bool KeyEvent::is(int mod, Key key) const {
         if (this->key != key) {
