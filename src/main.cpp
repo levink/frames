@@ -125,7 +125,7 @@ namespace ui {
     };
 
     struct FrameWindow {
-        string id;
+        char id[20];
         char name[128];
         bool opened;
         bool frameHovered;
@@ -141,17 +141,39 @@ namespace ui {
         function<void(const string&)> acceptDropFn;
         function<void(void)> closeFn;
 
-        explicit FrameWindow(const char* name, const char* id) : 
-            id(id), 
+        explicit FrameWindow(const char* name, const char* id) :
+            id({ 0 }),
             opened(false), 
             frameHovered(false),
             slideHovered(false),
             textureId(ImTextureID_Invalid) {
+            strncpy(this->id, id, sizeof(this->id));
             setName(name);
         }
         void setName(const char* label) {
+            
+            /*
+                The 'name' buffer should contains "{label}{id}" where
+                    id - ANSI string
+                    label - UTF8 string
+
+                We are control id, but not a label and its size. 
+                So we should trim the label if it is too long. 
+                And copy to the 'name' buffer only trimmed part of the label.
+               
+                Todo:
+                    calc trim size for label more accurate cause it is utf8 string
+            */
+
+            constexpr size_t bufSize = sizeof(name) - 1; //reserve last byte for '\0'
+            const size_t idSize = strlen(id);
+            const size_t available = bufSize >= idSize ? bufSize - idSize : 0;
+            const size_t labelSize = strlen(label);
+            const size_t trimSize = std::min(available, labelSize);
+
             memset(name, 0, sizeof(name));
-            snprintf(name, 128, "%s##%s", label, id.c_str());
+            snprintf(name, trimSize + 1, "%s", label);
+            snprintf(name + trimSize, idSize + 1, "%s", id);
         }
         void setProgress(float progress) {
             slider.progress = progress;
