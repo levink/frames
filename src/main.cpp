@@ -4,13 +4,13 @@
 #include <chrono>
 #include <functional>
 #include "io/io.h"
+#include "util/filedialog.h"
 #include "util/fs.h"
 #include "video/video.h"
 #include "render.h"
 #include "resources.h"
 #include "workstate.h"
 #include "imgui.h"
-#include "nfd.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
@@ -780,40 +780,15 @@ static void ui::restoreState(const WorkState& ws) {
     bug: set/hide cursor for render 
     pause all videos if one of them stopped
 */
-//todo: move showNativeFileDialog() out?
-static bool showNativeFileDialog(string& path, bool folder) {
-    static bool opened = false;
-
-    if (opened) {
-        return false;
-    }
-
-    opened = true;
-    nfdchar_t* bytesUTF8 = nullptr;
-    nfdresult_t result = folder ? 
-        NFD_PickFolder(nullptr, &bytesUTF8) :
-        NFD_OpenDialog(nullptr, nullptr, &bytesUTF8);
-    if (result == NFD_OKAY) {
-        path = string(bytesUTF8);
-        NFD_Free(&bytesUTF8);
-        opened = false;
-        return true;
-    }
-    else if (result == NFD_CANCEL) { /*cout << "nfd cancel" << endl;*/ }
-    else if (result == NFD_ERROR) { /*cout << "nfd error" << endl;*/ }
-
-    opened = false;
-    return false;
-}
 static void cmd::openFile() {
     string path;
-    if (showNativeFileDialog(path, false)) {
+    if (nfd::showNativeFileDialog(path, false)) {
         fileTreeWindow.openFile(path);
     }
 }
 static void cmd::openFolder() {
     string path;
-    if (showNativeFileDialog(path, true)) {
+    if (nfd::showNativeFileDialog(path, true)) {
         fileTreeWindow.openFolder(path);
     }
 }

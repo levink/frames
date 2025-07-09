@@ -26,6 +26,7 @@ add_executable(app
 	src/model/mesh.cpp
 	src/shader/shader.cpp
 	src/shader/shaderBase.cpp
+	src/util/filedialog.cpp
 	src/util/fs.cpp
 	src/util/math.cpp
 	src/video/frame.cpp
