@@ -524,6 +524,7 @@ namespace ui {
     static void drawKeysWindow();
     static void splitScreen(SplitMode mode);
     static void setSeekTarget(FrameController* target, bool hovered);
+    static void setWorkMode(WorkMode mode);
     static void seekLeft();
     static void seekRight();
     static void togglePause();
@@ -725,6 +726,14 @@ static void ui::setSeekTarget(FrameController* target, bool hovered) {
         seekTarget = nullptr;
     }
 }
+static void ui::setWorkMode(WorkMode mode) {
+    workMode = mode;
+    bool needShow = (workMode == WorkMode::DrawLines);
+    bool visible0 = needShow && fc[0].frameWindow.frameHovered;
+    bool visible1 = needShow && fc[1].frameWindow.frameHovered;
+    fc[0].frameRender.showCursor(visible0);
+    fc[1].frameRender.showCursor(visible1);
+}
 static void ui::seekLeft() {
     if (ui::seekTarget) {
         ui::seekTarget->seekLeft();
@@ -777,7 +786,6 @@ static void ui::restoreState(const WorkState& ws) {
 
 /*
     TODO:
-    bug: set/hide cursor for render 
     pause all videos if one of them stopped
 */
 static void cmd::openFile() {
@@ -889,12 +897,10 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(LEFT_ALT)) {
         if (action != Action::REPEAT) {
-            ui::workMode = (action == Action::PRESS) ?
+            auto mode = (action == Action::PRESS) ?
                 ui::WorkMode::DrawLines :
                 ui::WorkMode::MoveVideo;
-            bool visible = (ui::workMode == ui::WorkMode::DrawLines);
-            render.frames[0].showCursor(visible);
-            render.frames[1].showCursor(visible);
+            ui::setWorkMode(mode);
         }
     }
 }
