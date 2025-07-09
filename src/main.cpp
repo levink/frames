@@ -8,7 +8,7 @@
 #include "video/video.h"
 #include "render.h"
 #include "resources.h"
-#include "workspace.h"
+#include "workstate.h"
 #include "imgui.h"
 #include "nfd.h"
 #include "backends/imgui_impl_glfw.h"
@@ -40,7 +40,38 @@ namespace ui {
         }
     }
 
-    //todo: move inside Frame?
+    struct MainWindow {
+    private:
+        GLFWwindow* win = nullptr;
+        int width = 1000;
+        int height = 800;
+    public:
+        GLFWwindow* create() {
+            win = glfwCreateWindow(width, height, resources::programName, nullptr, nullptr);
+            return win;
+        }
+        void reshape(int w, int h) {
+            width = w;
+            height = h;
+        }
+        void close() const {
+            if (win) {
+                glfwSetWindowShouldClose(win, GL_TRUE);
+            }
+        }
+        void saveState(WorkState& ws) const {
+            auto& state = ws.main;
+            state.width = width;
+            state.height = height;
+        }
+        void restoreState(const WorkState& ws) {
+            auto& state = ws.main;
+            width = state.width;
+            height = state.height;
+        }
+    };
+
+    //todo: move inside frame window?
     struct Slider {
         float progress = 0;
         bool hold = false;
@@ -78,37 +109,6 @@ namespace ui {
                 return true;
             }
             return false;
-        }
-    };
-
-    struct MainWindow {
-    private:
-        GLFWwindow* win = nullptr;
-        int width = 1000;
-        int height = 800;
-    public:
-        GLFWwindow* create() {
-            win = glfwCreateWindow(width, height, resources::programName, nullptr, nullptr);
-            return win;
-        }
-        void reshape(int w, int h) {
-            width = w;
-            height = h;
-        }
-        void close() const {
-            if (win) {
-                glfwSetWindowShouldClose(win, GL_TRUE);
-            }
-        }
-        void saveState(Workspace& ws) const {
-            auto& state = ws.main;
-            state.width = width;
-            state.height = height;
-        }
-        void restoreState(const Workspace& ws) {
-            auto& state = ws.main;
-            width = state.width;
-            height = state.height;
         }
     };
 
@@ -338,7 +338,7 @@ namespace ui {
                 std::move(name)
             });
         }
-        void saveState(Workspace& ws) const {
+        void saveState(WorkState& ws) const {
             auto& state = ws.fileTree;
             state.folder = toUTF8(folder.path);
             state.files.reserve(files.size());
@@ -346,7 +346,7 @@ namespace ui {
                 state.files.push_back(toUTF8(item.path));
             }
         }
-        void restoreState(const Workspace& ws) {
+        void restoreState(const WorkState& ws) {
             auto& state = ws.fileTree;
             if (!state.folder.empty()) {
                 openFolder(state.folder);
@@ -496,13 +496,6 @@ namespace ui {
         void clearDrawn();
     };
 
-    static void newFrame();
-    static void render();
-    static void draw();
-    static void drawMainMenuBar(float& height);
-    static void drawColorWindow();
-    static void drawKeysWindow();
-
     enum SplitMode {
         Single = 0,
         HSplit = 1,
@@ -515,21 +508,27 @@ namespace ui {
     };
 
     int splitMode = SplitMode::Single;
-    static void splitScreen(SplitMode mode);
-
     int workMode = WorkMode::MoveVideo;
+    bool openedColor = true;
+    bool openedKeys = true;
+    bool openedWorkspace = true;
     int drawLineWidth = 20;
     float drawLineColor[3] = { 1.0f, 0.0f, 0.0f };
-
-    static bool openedWorkspace = true;
-    static bool openedColor = true;
-    static bool openedKeys = true;
-
     FrameController* seekTarget = nullptr;
+
+    static void newFrame();
+    static void render();
+    static void draw();
+    static void drawMainMenuBar(float& height);
+    static void drawColorWindow();
+    static void drawKeysWindow();
+    static void splitScreen(SplitMode mode);
     static void setSeekTarget(FrameController* target, bool hovered);
     static void seekLeft();
     static void seekRight();
     static void togglePause();
+    static void saveState(WorkState& ws);
+    static void restoreState(const WorkState& ws);
 }
 
 Render render;
@@ -755,10 +754,29 @@ static void ui::togglePause() {
         fc[1].player.pause(paused);
     }
 }
+static void ui::saveState(WorkState& ws) {
+    ws.openedColor      = ui::openedColor;
+    ws.openedKeys       = ui::openedKeys;
+    ws.openedWorkspace  = ui::openedWorkspace;
+    ws.splitMode        = ui::splitMode;
+    ws.drawLineWidth    = ui::drawLineWidth;
+    ws.drawLineColor[0] = ui::drawLineColor[0];
+    ws.drawLineColor[1] = ui::drawLineColor[1];
+    ws.drawLineColor[2] = ui::drawLineColor[2];
+}
+static void ui::restoreState(const WorkState& ws) {
+    ui::openedColor      = ws.openedColor;
+    ui::openedKeys       = ws.openedKeys;
+    ui::openedWorkspace  = ws.openedWorkspace;
+    ui::splitMode        = ws.splitMode;
+    ui::drawLineWidth    = ws.drawLineWidth;
+    ui::drawLineColor[0] = ws.drawLineColor[0];
+    ui::drawLineColor[1] = ws.drawLineColor[1];
+    ui::drawLineColor[2] = ws.drawLineColor[2];
+}
 
 /*
     TODO:
-    color window - save size between sessions
     bug: set/hide cursor for render 
     pause all videos if one of them stopped
 */
@@ -941,17 +959,19 @@ static void destroyImGui() {
     ImGui::DestroyContext();
 }
 static void saveWorkspace() {
-    Workspace ws;
+    WorkState ws;
     mainWindow.saveState(ws);
     fileTreeWindow.saveState(ws);
+    ui::saveState(ws);
     ws.save(resources::workspace);
 }
 static void loadWorkspace() {
 
-    Workspace ws;
+    WorkState ws;
     if (ws.load(resources::workspace)) {
         mainWindow.restoreState(ws);
         fileTreeWindow.restoreState(ws);
+        ui::restoreState(ws);
     }
 
     //todo: make more clean
