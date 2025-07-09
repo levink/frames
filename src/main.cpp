@@ -81,18 +81,6 @@ namespace ui {
         }
     };
 
-    //todo: move inside Frame?
-    struct Viewport {
-        ImVec2 region;
-        bool update(const ImVec2& value) {
-            bool changed = 
-                region.x != value.x ||
-                region.y != value.y;
-            region = value;
-            return changed;
-        }
-    };
-
     struct MainWindow {
     private:
         GLFWwindow* win = nullptr;
@@ -131,13 +119,13 @@ namespace ui {
         bool frameHovered;
         bool slideHovered;
         ImTextureID textureId;
-        Viewport viewPort;
+        ImVec2 size;
         Slider slider;
         function<void(bool)> hoverFrameFn;
         function<void(bool)> hoverSlideFn;
         function<void(int, int)> mouseFn;
         function<void(float, bool)> slideFn;
-        function<void(const Viewport&)> reshapeFn;
+        function<void(const ImVec2&)> reshapeFn;
         function<void(const string&)> acceptDropFn;
         function<void(void)> closeFn;
 
@@ -154,8 +142,8 @@ namespace ui {
             
             /*
                 The 'name' buffer should contains "{label}{id}" where
-                    id - ANSI string
-                    label - UTF8 string
+                    {id} is ANSI string
+                    {label} is UTF8 string
 
                 We are control id, but not a label and its size. 
                 So we should trim the label if it is too long. 
@@ -201,9 +189,9 @@ namespace ui {
 
             auto cursor = ImGui::GetCursorScreenPos();
             auto region = ImGui::GetContentRegionAvail();
-            bool changed = viewPort.update(region);
+            bool changed = updateSize(region);
             if (changed && reshapeFn) {
-                reshapeFn(viewPort);
+                reshapeFn(region);
             }
 
             // video texture (RTT)
@@ -274,6 +262,13 @@ namespace ui {
             if (!opened && openedPrevFrame && closeFn) {
                 closeFn();
             }
+        }
+        bool updateSize(const ImVec2& newSize) {
+            bool changed =
+                size.x != newSize.x ||
+                size.y != newSize.y;
+            size = newSize;
+            return changed;
         }
     };
 
@@ -528,7 +523,7 @@ namespace ui {
 
     static bool openedWorkspace = true;
     static bool openedColor = true;
-    static bool openedKeys = false;
+    static bool openedKeys = true;
 
     FrameController* seekTarget = nullptr;
     static void setSeekTarget(FrameController* target, bool hovered);
@@ -675,7 +670,7 @@ static void ui::drawColorWindow() {
         return;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Color", &ui::openedColor)) {
         bool changed = ImGui::DragInt("Width", &ui::drawLineWidth, 0.5f, 2, 50);
         changed |= ImGui::ColorEdit3("Color", ui::drawLineColor);
@@ -691,7 +686,7 @@ static void ui::drawKeysWindow() {
         return;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(0, 0));
     if (ImGui::Begin("Hot Keys", &ui::openedKeys)) {
         ImGui::Text("Play/pause"); ImGui::SameLine(); ImGui::TextDisabled("[SPACE]");
         ImGui::Text("Next frame"); ImGui::SameLine(); ImGui::TextDisabled("[RIGHT] or [D]");
@@ -761,6 +756,12 @@ static void ui::togglePause() {
     }
 }
 
+/*
+    TODO:
+    color window - save size between sessions
+    bug: set/hide cursor for render 
+    pause all videos if one of them stopped
+*/
 //todo: move showNativeFileDialog() out?
 static bool showNativeFileDialog(string& path, bool folder) {
     static bool opened = false;
@@ -975,9 +976,8 @@ void ui::FrameController::linkChildreen() {
     frameWindow.slideFn = [this](float progress, bool hold) {
         player.seekProgress(progress, hold);
     };
-    frameWindow.reshapeFn = [this](const ui::Viewport& vp) {
-        const auto [width, height] = vp.region;
-        frameRender.reshape(width, height);
+    frameWindow.reshapeFn = [this](const ImVec2& size) {
+        frameRender.reshape(size.x, size.y);
     };
     frameWindow.acceptDropFn = [this](const string& path) {
         this->openFile(path);
