@@ -80,7 +80,7 @@ namespace video {
         std::thread t;
         std::mutex mtx;
         std::condition_variable cv;
-        std::atomic<bool> finished = false;
+        std::atomic<bool> stopped = false; //status of background thread
         FramePool pool;
         VideoReader reader;
 
@@ -142,9 +142,9 @@ namespace video {
     };
 
     struct PlayState {
-        bool started = false;
-        bool hold = false;
-        bool paused = true;
+        bool started = false;   // opened video file or not
+        bool hold = false;      // user holds the progress slider manually, we pause video until he releases the slider
+        bool paused = true;     // user toggle pause by clicking [SPACE] key or 'Pause' button
         bool update = true;     // flag for update frame when paused or manual seek
         float progress = 0.f;   // [0; 100]
         int64_t framePts = 0;   // last seen frame pts 
@@ -166,6 +166,7 @@ namespace video {
         void seekPts(int64_t pts);
         void pause(bool paused);
         bool hasUpdate(const time_point& now);
+        bool eof();
         const RGBFrame* currentFrame();
     };
 

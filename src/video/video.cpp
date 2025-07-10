@@ -83,10 +83,11 @@ namespace video {
         }
 
         float value = (pts * 100.f) / durationPts;
-        if (value < 0.f) return 0;
+        if (value < 0.f) return 0.f;
         if (value > 100.f) return 100.f;
         return value;
     }
+
     int64_t StreamInfo::ptsToMicros(int64_t pts) const {
         auto num = pts * time_base.num * 1000000;
         auto den = time_base.den;
@@ -217,7 +218,7 @@ namespace video {
             return ok;
         }
 
-        std::cout << "readFrame() finished2" << std::endl;
+        std::cout << "readFrame() finished" << std::endl;
         return false;
     }
     bool VideoReader::readRaw() {
@@ -319,7 +320,7 @@ namespace video {
         return false;
     }
     void FrameLoader::start() {
-        finished.store(false);
+        stopped.store(false);
         {
             auto lock = std::lock_guard(mtx);
             sharedState.loadDir = 1;
@@ -328,14 +329,14 @@ namespace video {
         cv.notify_one();
         t = std::thread([this]() {
             playback();
-            });
+        });
     }
     void FrameLoader::stop() {
-        if (finished) {
+        if (stopped) {
             return;
         }
 
-        finished.store(true);
+        stopped.store(true);
         { auto lock = std::lock_guard(mtx); }
         cv.notify_one();
         if (t.joinable()) {
@@ -373,10 +374,10 @@ namespace video {
     }
     bool FrameLoader::canWork() {
         auto lock = std::unique_lock(mtx);
-        while (!finished && (result || reader.eof && sharedState.seekPts == -1)) {
+        while (!stopped && (result || reader.eof && sharedState.seekPts == -1)) {
             cv.wait(lock);
         }
-        return !finished;
+        return !stopped;
     }
     FrameLoader::State FrameLoader::copyState() {
         auto lock = std::lock_guard(mtx);
@@ -565,7 +566,7 @@ namespace video {
         }
     }
     void FrameQueue::seekNextFrame(FrameLoader& loader) {
-        if (selected + 1 < items.size()) {
+        if (selected < items.size()) {
             selected++;
         }
 
@@ -783,6 +784,12 @@ namespace video {
                     ps.progress = info.calcProgress(frame->pts);
                     return true;
                 }
+                if (eof()) {
+                    ps.paused = true;
+                    ps.update = false;
+                    ps.progress = info.calcProgress(ps.framePts + ps.frameDur);
+                    return true;
+                }
             }
         }
         else if (ps.update) {
@@ -794,10 +801,28 @@ namespace video {
                 ps.progress = info.calcProgress(frame->pts);
                 return true;
             }
+            if (eof()) {
+                ps.paused = true;
+                ps.update = false;
+                ps.progress = info.calcProgress(ps.framePts + ps.frameDur);
+                return true;
+            }
         }
 
         return false;
     }
+    bool Player::eof() {
+        auto pts = ps.framePts + ps.frameDur;
+        return pts >= info.durationPts;
+        {
+            ps.paused = true;
+            ps.update = false;
+            ps.progress = info.calcProgress(pts);
+            return true;
+        }
+        return false;
+    }
+
     const RGBFrame* Player::currentFrame() {
         return frameQ.curr();
     }

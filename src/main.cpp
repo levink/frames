@@ -54,6 +54,11 @@ namespace ui {
             width = w;
             height = h;
         }
+        void setSize(int w, int h) {
+            if (win) {
+                glfwSetWindowSize(win, w, h);
+            }
+        }
         void close() const {
             if (win) {
                 glfwSetWindowShouldClose(win, GL_TRUE);
@@ -515,6 +520,7 @@ namespace ui {
     int drawLineWidth = 20;
     float drawLineColor[3] = { 1.0f, 0.0f, 0.0f };
     FrameController* seekTarget = nullptr;
+    FrameWindow* singleModeTarget = nullptr;
 
     static void newFrame();
     static void render();
@@ -595,9 +601,11 @@ static void ui::draw() {
 
     switch (splitMode) {
     case SplitMode::Single: {
-        ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(sz.x, sz.y), ImGuiCond_Always);
-        frameWindow_0.draw();
+        if (singleModeTarget) {
+            ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(sz.x, sz.y), ImGuiCond_Always);
+            singleModeTarget->draw();
+        }
         break;
     }
     case SplitMode::HSplit: {
@@ -643,11 +651,10 @@ static void ui::drawMainMenuBar(float& height) {
             //ImGui::PopItemFlag();
             if (ImGui::MenuItem("Workspace", nullptr, openedWorkspace)) { openedWorkspace = !openedWorkspace; }
             if (ImGui::MenuItem("Color", nullptr, openedColor)) { openedColor = !openedColor; }
-            if (ImGui::MenuItem("Hot Keys", nullptr, openedKeys)) { openedKeys = !openedKeys; }
+            if (ImGui::MenuItem("Hot Keys", nullptr, openedKeys)) { openedKeys = !openedKeys; }   
             ImGui::EndMenu();
         }
         
-
         if (ImGui::BeginMenu("Split")) {
             if (ImGui::MenuItem("Single frame", nullptr, splitMode == SplitMode::Single)) { 
                 ui::splitScreen(SplitMode::Single);
@@ -658,6 +665,14 @@ static void ui::drawMainMenuBar(float& height) {
             if (ImGui::MenuItem("Top + Bottom", nullptr, splitMode == SplitMode::VSplit)) {
                 ui::splitScreen(SplitMode::VSplit);
             }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Presets")) {
+            if (ImGui::MenuItem("Landscape [1280x720]")) { mainWindow.setSize(1280, 720); }
+            if (ImGui::MenuItem("Portrait [720x1280]")) { mainWindow.setSize(720, 1280); }
+            if (ImGui::MenuItem("Square [1080x1080]")) { mainWindow.setSize(1080, 1080); }
+            if (ImGui::MenuItem("Square [720x720]")) { mainWindow.setSize(960, 960); }
             ImGui::EndMenu();
         }
 
@@ -714,8 +729,15 @@ static void ui::render() {
 }
 static void ui::splitScreen(SplitMode mode) {
     splitMode = mode;
+    singleModeTarget = nullptr;
     if (mode == SplitMode::Single) {
-        fc[1].closeFile();
+        if (fc[1].player.ps.started) {
+            singleModeTarget = &fc[1].frameWindow;
+            fc[0].closeFile();
+        } else {
+            singleModeTarget = &fc[0].frameWindow;
+            fc[1].closeFile();
+        }
     }
 }
 static void ui::setSeekTarget(FrameController* target, bool hovered) {
@@ -755,12 +777,17 @@ static void ui::seekRight() {
 static void ui::togglePause() {
     if (ui::seekTarget) {
         ui::seekTarget->togglePause();
-    } else {
-        bool paused =
-            !fc[0].player.ps.paused ||
-            !fc[1].player.ps.paused;
-        fc[0].player.pause(paused);
-        fc[1].player.pause(paused);
+    }
+    else {
+        auto& p0 = fc[0].player;
+        auto& p1 = fc[1].player;
+        bool paused = !p0.ps.paused || !p1.ps.paused;
+        if (!p0.eof()) {
+            p0.pause(paused);
+        }
+        if (!p1.eof()) {
+            p1.pause(paused);
+        }
     }
 }
 static void ui::saveState(WorkState& ws) {
@@ -988,11 +1015,26 @@ void ui::FrameController::linkChildreen() {
     };
 }
 void ui::FrameController::update(const time_point& now) {
+   
     if (player.hasUpdate(now)) {
         const RGBFrame* rgb = player.currentFrame();
-        frameRender.updateTexture(rgb->width, rgb->height, rgb->pixels);
+        if (rgb) {
+            frameRender.updateTexture(rgb->width, rgb->height, rgb->pixels);
+        }
         frameWindow.setProgress(player.ps.progress);
+
+        //todo: do this after two updates
+        if (player.eof() && ui::splitMode != SplitMode::Single && ui::seekTarget == nullptr) {
+            if (&player == &fc[0].player) {
+                fc[1].player.pause(true);
+            }
+            if (&player == &fc[1].player) {
+                fc[0].player.pause(true);
+            }
+        }
     }
+    
+
 }
 void ui::FrameController::openFile(const string& path) {
     if (player.start(path.c_str())) {
