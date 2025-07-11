@@ -34,4 +34,5 @@ struct LineMesh {
     bool empty() const;
     void clear();
     void createPoint(size_t vertexOffset, const glm::vec2& pos, float radius);
+    size_t offset() const;
 };

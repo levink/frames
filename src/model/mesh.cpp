@@ -54,4 +54,7 @@ void LineMesh::createPoint(size_t vertexOffset, const glm::vec2& pos, float radi
     vertex[2] = LineVertex{ pos + dx - dy, pos, pos, radius };
     vertex[3] = LineVertex{ pos + dx + dy, pos, pos, radius };
 }
+size_t LineMesh::offset() const {
+    return vertex.size();
+}
 

@@ -499,6 +499,7 @@ namespace ui {
         void seekLeft();
         void seekRight();
         void clearDrawn();
+        void updateCursor();
     };
 
     enum SplitMode {
@@ -528,7 +529,7 @@ namespace ui {
     static void drawMainMenuBar(float& height);
     static void drawColorWindow();
     static void drawKeysWindow();
-    static void splitScreen(SplitMode mode);
+    static void setSplitMode(SplitMode mode);
     static void setSeekTarget(FrameController* target, bool hovered);
     static void setWorkMode(WorkMode mode);
     static void seekLeft();
@@ -630,7 +631,6 @@ static void ui::draw() {
     }
     }
 
-
     //ImGui::SetNextWindowPos(ImVec2(100, menuHeight + workSize.y - 300), ImGuiCond_FirstUseEver);
     ui::drawColorWindow();
     ui::drawKeysWindow();
@@ -657,13 +657,13 @@ static void ui::drawMainMenuBar(float& height) {
         
         if (ImGui::BeginMenu("Split")) {
             if (ImGui::MenuItem("Single frame", nullptr, splitMode == SplitMode::Single)) { 
-                ui::splitScreen(SplitMode::Single);
+                ui::setSplitMode(SplitMode::Single);
             }
             if (ImGui::MenuItem("Left + Right", nullptr, splitMode == SplitMode::HSplit)) {
-                ui::splitScreen(SplitMode::HSplit);
+                ui::setSplitMode(SplitMode::HSplit);
             }
             if (ImGui::MenuItem("Top + Bottom", nullptr, splitMode == SplitMode::VSplit)) {
-                ui::splitScreen(SplitMode::VSplit);
+                ui::setSplitMode(SplitMode::VSplit);
             }
             ImGui::EndMenu();
         }
@@ -727,7 +727,7 @@ static void ui::render() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
-static void ui::splitScreen(SplitMode mode) {
+static void ui::setSplitMode(SplitMode mode) {
     splitMode = mode;
     singleModeTarget = nullptr;
     if (mode == SplitMode::Single) {
@@ -750,11 +750,7 @@ static void ui::setSeekTarget(FrameController* target, bool hovered) {
 }
 static void ui::setWorkMode(WorkMode mode) {
     workMode = mode;
-    bool needShow = (workMode == WorkMode::DrawLines);
-    bool visible0 = needShow && fc[0].frameWindow.frameHovered;
-    bool visible1 = needShow && fc[1].frameWindow.frameHovered;
-    fc[0].frameRender.showCursor(visible0);
-    fc[1].frameRender.showCursor(visible1);
+    cout << "set work mode " << workMode << endl;
 }
 static void ui::seekLeft() {
     if (ui::seekTarget) {
@@ -791,30 +787,31 @@ static void ui::togglePause() {
     }
 }
 static void ui::saveState(WorkState& ws) {
-    ws.openedColor      = ui::openedColor;
-    ws.openedKeys       = ui::openedKeys;
-    ws.openedWorkspace  = ui::openedWorkspace;
-    ws.splitMode        = ui::splitMode;
-    ws.drawLineWidth    = ui::drawLineWidth;
+    ws.openedColor = ui::openedColor;
+    ws.openedKeys = ui::openedKeys;
+    ws.openedWorkspace = ui::openedWorkspace;
+    ws.splitMode = ui::splitMode;
+    ws.drawLineWidth = ui::drawLineWidth;
     ws.drawLineColor[0] = ui::drawLineColor[0];
     ws.drawLineColor[1] = ui::drawLineColor[1];
     ws.drawLineColor[2] = ui::drawLineColor[2];
 }
 static void ui::restoreState(const WorkState& ws) {
-    ui::openedColor      = ws.openedColor;
-    ui::openedKeys       = ws.openedKeys;
-    ui::openedWorkspace  = ws.openedWorkspace;
-    ui::splitMode        = ws.splitMode;
-    ui::drawLineWidth    = ws.drawLineWidth;
-    ui::drawLineColor[0] = ws.drawLineColor[0];
-    ui::drawLineColor[1] = ws.drawLineColor[1];
-    ui::drawLineColor[2] = ws.drawLineColor[2];
+    ui::openedColor         = ws.openedColor;
+    ui::openedKeys          = ws.openedKeys;
+    ui::openedWorkspace     = ws.openedWorkspace;
+    ui::splitMode           = ws.splitMode;
+    ui::drawLineWidth       = ws.drawLineWidth;
+    ui::drawLineColor[0]    = ws.drawLineColor[0];
+    ui::drawLineColor[1]    = ws.drawLineColor[1];
+    ui::drawLineColor[2]    = ws.drawLineColor[2];
+
+    if (splitMode == SplitMode::Single) {
+        singleModeTarget = &fc[0].frameWindow;
+    }
 }
 
-/*
-    TODO:
-    pause all videos if one of them stopped
-*/
+
 static void cmd::openFile() {
     string path;
     if (nfd::showNativeFileDialog(path, false)) {
@@ -833,56 +830,58 @@ static void cmd::quitProgram() {
 static void reshapeCallback(GLFWwindow*, int w, int h) {
     mainWindow.reshape(w, h);
 }
-static void hoverCallback(FrameRender& frame, bool hovered) {
-    if (hovered) {
-        bool visible = (ui::workMode == ui::WorkMode::DrawLines);
-        frame.showCursor(visible);
-    } else {
-        frame.showCursor(false);
-    }
-}
 static void mouseCallback(FrameRender& frame, int mx, int my) {
- 
+
     ImGuiIO& io = ImGui::GetIO();
     const int& dx = io.MouseDelta.x;
     const int& dy = io.MouseDelta.y;
-    const bool move = dx || dy;
+    const bool hasDelta = dx || dy;
 
     if (ui::workMode == ui::WorkMode::MoveVideo) {
-        
+
         if (io.MouseWheel) {
             bool ctrl = ImGui::IsKeyDown(ImGuiMod_Ctrl);
             float value = ctrl ? (io.MouseWheel * 0.25f) : io.MouseWheel;
             frame.zoomCam(value);
         }
-        
-        if (move && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            frame.moveCam(dx, dy);
-        } 
+
+        if (hasDelta) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                frame.moveCam(dx, dy);
+            } else {
+                frame.moveCursor(mx, my);
+            }
+        }
     }
     else if (ui::workMode == ui::WorkMode::DrawLines) {
 
         if (io.MouseWheel) {
             int delta = std::max(1.f, ui::drawLineWidth * 0.2f);
-            ui::drawLineWidth += io.MouseWheel * delta; 
+            ui::drawLineWidth += io.MouseWheel * delta;
             frame.setBrush(ui::drawLineColor, ui::drawLineWidth);
         }
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            frame.drawStart(mx, my);
-            frame.showCursor(false);
+            
+            DrawType drawMode =
+                ImGui::IsMouseDown(ImGuiMouseButton_Left) ? DrawType::Points :
+                ImGui::IsMouseDown(ImGuiMouseButton_Right) ? DrawType::Segments : 
+                DrawType::None;
+            frame.drawStart(mx, my, drawMode);
         }
         else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-            frame.drawStop();
-            frame.showCursor(true);
+            frame.drawStop(mx, my);
+
+            auto mode = ImGui::IsKeyDown(ImGuiKey_LeftAlt) ?
+                ui::WorkMode::DrawLines : ui::WorkMode::MoveVideo;
+            ui::setWorkMode(mode);
+            fc[0].updateCursor();
+            fc[1].updateCursor();
         }
-        else if (move && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            frame.drawNext(mx, my, 0);
-        } 
-        else if (move && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-            frame.drawNext(mx, my, 1);
-        }
-        else {
+        else if (hasDelta) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)){
+                frame.drawNext(mx, my);
+            }
             frame.moveCursor(mx, my);
         }
     }
@@ -922,13 +921,13 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(Mod::CONTROL, O)) {
         cmd::openFile();
     }
-    else if (key.is(LEFT_ALT)) {
-        if (action != Action::REPEAT) {
-            auto mode = (action == Action::PRESS) ?
-                ui::WorkMode::DrawLines :
-                ui::WorkMode::MoveVideo;
-            ui::setWorkMode(mode);
-        }
+    else if (key.is(LEFT_ALT) && action != Action::REPEAT) {
+        auto mode = action == Action::PRESS ?
+            ui::WorkMode::DrawLines :
+            ui::WorkMode::MoveVideo;
+        ui::setWorkMode(mode);
+        fc[0].updateCursor();
+        fc[1].updateCursor();
     }
 }
 static bool loadGLES(GLFWwindow* window) {
@@ -983,9 +982,7 @@ static void loadWorkspace() {
     }
 
     //todo: make more clean
-    bool visible = (ui::workMode == ui::WorkMode::DrawLines);
-    render.frames[0].showCursor(visible);
-    render.frames[1].showCursor(visible);
+
 
     render.frames[0].setBrush(ui::drawLineColor, ui::drawLineWidth);
     render.frames[1].setBrush(ui::drawLineColor, ui::drawLineWidth);
@@ -993,7 +990,8 @@ static void loadWorkspace() {
 
 void ui::FrameController::linkChildreen() {
     frameWindow.hoverFrameFn = [this](bool hovered) {
-        hoverCallback(frameRender, hovered);
+        frameRender.drawReset();
+        frameRender.showCursor(hovered && (ui::workMode == DrawLines) && ImGui::IsKeyDown(ImGuiKey_LeftAlt));
     };
     frameWindow.hoverSlideFn = [this](bool hovered) {
         ui::setSeekTarget(this, hovered);
@@ -1067,6 +1065,9 @@ void ui::FrameController::seekRight() {
 }
 void ui::FrameController::clearDrawn() {
     frameRender.clearDrawn();
+}
+void ui::FrameController::updateCursor() {
+    frameRender.showCursor(frameWindow.frameHovered && (ui::workMode == DrawLines));
 }
 
 int main(int argc, char* argv[]) {

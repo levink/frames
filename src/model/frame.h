@@ -41,9 +41,14 @@ struct Line {
     size_t meshOffset;
 
     Line(float radius, size_t meshOffset);
-    void addPoint(const glm::vec2& pos, LineMesh& mesh);
+    void addPoint(const glm::vec2& pos);
     void moveLast(const glm::vec2& pos);
-    void updateMesh(LineMesh& mesh);
+};
+
+enum struct DrawType {
+    None        = 0,
+    Points      = 1,
+    Segments    = 2
 };
 
 struct FrameRender {
@@ -52,10 +57,9 @@ struct FrameRender {
     Cursor cursor;
     ImageMesh imageMesh;
     
-    bool draw = false;
+    DrawType drawType = DrawType::None;
     float lineWidth = 5.f;
-    glm::vec3 backColor = { 1.f, 1.f, 1.f };
-    glm::vec3 frontColor = { 1.f, 0.f, 0.f };
+    float lineColor[3] = {1.f, 0.f, 0.f};
     std::list<Line> lines;
     LineMesh lineMesh;   
 
@@ -67,16 +71,17 @@ struct FrameRender {
     void zoomCam(float value);
     void render(ShaderContext& shader) const;
     void setBrush(const float color[3], float width);
-    void showCursor(bool visible);
     void moveCursor(int x, int y);
-    void drawStart(int x, int y);
-    void drawNext(int x, int y, int mode); //todo: use enum for mode?
-    void drawStop();
+    void showCursor(bool visible);
+    void drawStart(int x, int y, DrawType type);
+    void drawNext(int x, int y);
+    void drawStop(int x, int y);
+    void drawReset();
     void clearDrawn();
 
 private:
     glm::vec2 toOpenGLSpace(int x, int y) const;
     glm::vec2 toSceneSpace(int x, int y) const;
-    glm::vec2 setCursor(int x, int y);
+    void updateCursor();
     float getLineRadius() const;
 };

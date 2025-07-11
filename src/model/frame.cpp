@@ -125,7 +125,7 @@ void FrameRender::moveCam(int dx, int dy) {
 }
 void FrameRender::zoomCam(float units) {
 	cam.zoom(units * 0.1f);
-	setCursor(cursor.screen.x, cursor.screen.y);
+	updateCursor();
 }
 void FrameRender::render(ShaderContext& shaders) const {
 	
@@ -176,65 +176,150 @@ glm::vec2 FrameRender::toSceneSpace(int x, int y) const {
 float FrameRender::getLineRadius() const {
 	return 0.5f * lineWidth * cam.scale_inverse;
 }
-glm::vec2 FrameRender::setCursor(int x, int y) {
-	cursor.screen = { x, y };
-	cursor.position = toSceneSpace(x, y);
-
-	float radius = getLineRadius();
-	cursor.mesh.createPoint(0, cursor.position, radius);
-	cursor.mesh.color = frontColor;
-	
-	return cursor.position;
-}
 void FrameRender::setBrush(const float color[3], float width) {
-	lineWidth = width;
-	frontColor[0] = color[0];
-	frontColor[1] = color[1];
-	frontColor[2] = color[2];
-	lineMesh.color = frontColor;
-
-	float radius = getLineRadius();
-	cursor.mesh.createPoint(0, cursor.position, radius);
-	cursor.mesh.color = frontColor;
-}
-void FrameRender::showCursor(bool visible) {
-	cursor.visible = visible;
+	if (lineWidth != width) {
+		lineWidth = width;
+		
+		float radius = getLineRadius();
+		cursor.mesh.createPoint(0, cursor.position, radius);
+	}
+	
+	lineColor[0] = color[0];
+	lineColor[1] = color[1];
+	lineColor[2] = color[2];
+	lineMesh.color[0] = color[0];
+	lineMesh.color[1] = color[1];
+	lineMesh.color[2] = color[2];
+	cursor.mesh.color[0] = color[0];
+	cursor.mesh.color[1] = color[1];
+	cursor.mesh.color[2] = color[2];
 }
 void FrameRender::moveCursor(int x, int y) {
-	setCursor(x, y);
+	/*cout << "move cursor" << endl;*/
+	cursor.screen.x = x;
+	cursor.screen.y = y;
+	updateCursor();
 }
-void FrameRender::drawStart(int x, int y) {
-	if (!draw) {
-		draw = true;
+void FrameRender::showCursor(bool visible) {
+	//cout << "show cursor " << visible << endl;
+	cursor.visible = visible;
+	if (cursor.visible) {
+		updateCursor();
 	}
-		
-	const auto pos = setCursor(x, y);
-	const auto radius = getLineRadius();
-	const auto meshOffset = lineMesh.vertex.size();
-	Line& line = lines.emplace_back(Line(radius, meshOffset));
-	line.addPoint(pos, lineMesh);
-	line.updateMesh(lineMesh);
 }
-void FrameRender::drawNext(int x, int y, int mode) {
+void FrameRender::updateCursor() {
+	if (cursor.visible) {
+		float radius = getLineRadius();
+		cursor.position = toSceneSpace(cursor.screen.x, cursor.screen.y);
+		cursor.mesh.createPoint(0, cursor.position, radius);
+	}
+}
 
-	auto pos = setCursor(x, y);
-	if (draw && !lines.empty()) {
-		auto& line = lines.back();
-		if (line.points.size() < 2) {
-			line.addPoint(pos, lineMesh);
-		} else {
-			if (mode == 0) {
-				line.addPoint(pos, lineMesh);
-			} else {
-				line.moveLast(pos);
-			}
+namespace paint {
+	static void updateVertex(LineVertex* data, const Segment& s, float r) {
+		//if (s.openLeft && s.openRight) {
+		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2, r };
+		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2, r };
+		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2, r };
+		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2, r };
+		/*}
+		else if (s.openLeft) {
+			data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2, r };
+			data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2, r };
+			data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2, r };
+			data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2, r };
 		}
-		line.updateMesh(lineMesh);
+		else if (s.openRight) {
+			data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2, r };
+			data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2, r };
+			data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2, r };
+			data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2, r };
+		}
+		else {
+			data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2, r };
+			data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2, r };
+			data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2, r };
+			data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2, r };
+		}*/
+	}
+	static void updateMesh(const Line& line, LineMesh& mesh) {
+		auto segmentCount = line.segments.size();
+		auto expectedSize = line.meshOffset + 4 * segmentCount;
+		while (mesh.vertex.size() < expectedSize) {
+			mesh.reserveQuad();
+		}
+
+		auto lastQuad = &mesh.vertex[0] + expectedSize - 4;
+		auto& segment = line.segments.back();
+		updateVertex(lastQuad, segment, line.radius);
+	}
+	static void drawPoint(Line& line, LineMesh& mesh, const glm::vec2& pos) {
+		line.addPoint(pos);
+		updateMesh(line, mesh);
+	}
+	static void drawSegment(Line& line, LineMesh& mesh, const glm::vec2& pos) {
+		if (line.points.size() < 2) {
+			line.addPoint(pos);
+		} else {
+			line.moveLast(pos);
+		}
+		updateMesh(line, mesh);
+	}
+	static void draw(Line& line, LineMesh& mesh, const glm::vec2& pos, DrawType type) {
+		switch (type) {
+		case DrawType::Points: { 
+			drawPoint(line, mesh, pos); 
+			break; 
+		}
+		case DrawType::Segments: { 
+			drawSegment(line, mesh, pos); 
+			break; 
+		}
+		default: { /* Nothing to do */ }
+		}
 	}
 }
-void FrameRender::drawStop() {
-	if (draw) {
-		draw = false;
+
+void FrameRender::drawStart(int x, int y, DrawType type) {
+	
+	bool alreadyDraw = drawType != DrawType::None;
+	if (alreadyDraw) {
+		return;
+	}
+	
+	//cout << "draw start " << type << endl;
+	drawType = type;
+	auto pos = toSceneSpace(x, y);
+	auto radius = getLineRadius();
+	auto offset = lineMesh.offset();
+	Line& line = lines.emplace_back(Line(radius, offset));
+	paint::draw(line, lineMesh, pos, drawType);
+}
+void FrameRender::drawNext(int x, int y) {
+
+	if (drawType == DrawType::None) {
+		return;
+	}
+
+	//cout << "draw next ";
+	auto pos = toSceneSpace(x, y);
+	paint::draw(lines.back(), lineMesh, pos, drawType);
+}
+void FrameRender::drawStop(int x, int y) {
+
+	if (drawType == DrawType::None) {
+		return;
+	}
+
+	auto pos = toSceneSpace(x, y);
+	paint::draw(lines.back(), lineMesh, pos, drawType);
+	drawType = DrawType::None;
+	cout << "draw stop count = " << lines.back().points.size() << endl;
+}
+void FrameRender::drawReset() {
+	if (drawType != DrawType::None) {
+		drawType = DrawType::None;
+		cout << "draw reset" << endl;
 	}
 }
 void FrameRender::clearDrawn() {
@@ -268,19 +353,17 @@ void Segment::moveP2(const glm::vec2& pos) {
 Line::Line(float radius, size_t meshOffset) :
 	radius(radius),
 	meshOffset(meshOffset) { }
-void Line::addPoint(const glm::vec2& pos, LineMesh& mesh) {
+void Line::addPoint(const glm::vec2& pos) {
 	if (points.size() > 1) {
 		Segment segment(points.back(), pos);
 		points.emplace_back(pos);
 		segments.emplace_back(segment);
-		mesh.reserveQuad();	
 	} 
 	else if (points.empty()) {
 		points.emplace_back(pos);
 		segments.emplace_back(Segment(pos, pos));
-		mesh.reserveQuad();
 	}
-	else {
+	else /*if (points.size() == 1) */ {
 		points.emplace_back(pos);
 		segments.back().moveP2(pos);
 	}
@@ -288,36 +371,4 @@ void Line::addPoint(const glm::vec2& pos, LineMesh& mesh) {
 void Line::moveLast(const glm::vec2& pos) {
 	points.back() = pos;
 	segments.back().moveP2(pos);
-}
-static void updateVertex(LineVertex* data, const Segment& s, float r) {
-	//if (s.openLeft && s.openRight) {
-		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2, r };
-		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2, r };
-		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2, r };
-		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2, r };
-	/*}
-	else if (s.openLeft) {
-		data[0] = LineVertex{ s.p1 - r * s.dir - r * s.n1, s.p1, s.p2, r };
-		data[1] = LineVertex{ s.p1 - r * s.dir + r * s.n1, s.p1, s.p2, r };
-		data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2, r };
-		data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2, r };
-	}
-	else if (s.openRight) {
-		data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2, r };
-		data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2, r };
-		data[2] = LineVertex{ s.p2 + r * s.dir - r * s.n2, s.p1, s.p2, r };
-		data[3] = LineVertex{ s.p2 + r * s.dir + r * s.n2, s.p1, s.p2, r };
-	}
-	else {
-		data[0] = LineVertex{ s.p1 - r * s.n1, s.p1, s.p2, r };
-		data[1] = LineVertex{ s.p1 + r * s.n1, s.p1, s.p2, r };
-		data[2] = LineVertex{ s.p2 - r * s.n2, s.p1, s.p2, r };
-		data[3] = LineVertex{ s.p2 + r * s.n2, s.p1, s.p2, r };
-	}*/
-}
-void Line::updateMesh(LineMesh& mesh) {
-	auto sIndex = segments.size() - 1;
-	auto data = &mesh.vertex[4 * sIndex]+ meshOffset;
-	auto& segment = segments[sIndex];
-	updateVertex(data, segment, radius);
 }
