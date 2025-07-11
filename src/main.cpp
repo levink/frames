@@ -119,9 +119,9 @@ namespace ui {
     struct FrameWindow {
         char id[20];
         char name[128];
-        bool opened;
         bool frameHovered;
         bool slideHovered;
+        bool hasVideo;
         ImTextureID textureId;
         ImVec2 size;
         Slider slider;
@@ -133,14 +133,14 @@ namespace ui {
         function<void(const string&)> acceptDropFn;
         function<void(void)> closeFn;
 
-        explicit FrameWindow(const char* name, const char* id) :
+        explicit FrameWindow(const char* label, const char* id) :
             id({ 0 }),
-            opened(false), 
             frameHovered(false),
             slideHovered(false),
+            hasVideo(false),
             textureId(ImTextureID_Invalid) {
             strncpy(this->id, id, sizeof(this->id));
-            setName(name);
+            setName(label);
         }
         void setName(const char* label) {
             
@@ -156,27 +156,35 @@ namespace ui {
                 Todo:
                     calc trim size for label more accurate cause it is utf8 string
             */
+            
+            if (label == nullptr) {                
+                const size_t idSize = strlen(id);
+                memset(name, 0, sizeof(name));
+                snprintf(name, idSize + 1, "%s", id);
+            }
+            else {
+                constexpr size_t bufSize = sizeof(name) - 1; //reserve last byte for '\0'
+                const size_t idSize = strlen(id);
+                const size_t available = bufSize >= idSize ? bufSize - idSize : 0;
+                const size_t labelSize = strlen(label);
+                const size_t trimSize = std::min(available, labelSize);
 
-            constexpr size_t bufSize = sizeof(name) - 1; //reserve last byte for '\0'
-            const size_t idSize = strlen(id);
-            const size_t available = bufSize >= idSize ? bufSize - idSize : 0;
-            const size_t labelSize = strlen(label);
-            const size_t trimSize = std::min(available, labelSize);
-
-            memset(name, 0, sizeof(name));
-            snprintf(name, trimSize + 1, "%s", label);
-            snprintf(name + trimSize, idSize + 1, "%s", id);
+                memset(name, 0, sizeof(name));
+                snprintf(name, trimSize + 1, "%s", label);
+                snprintf(name + trimSize, idSize + 1, "%s", id);
+            }
+        }
+        void setVideo(bool value) {
+            hasVideo = value;
         }
         void setProgress(float progress) {
             slider.progress = progress;
         }
         void setTextureID(const ImTextureID& value) {
             textureId = value;
-            opened = (textureId != ImTextureID_Invalid);
         }
         void draw() {
-            bool hasVideo = textureId != ImTextureID_Invalid;
-            bool openedPrevFrame = opened;
+            bool openedPrevFrame = hasVideo;
 
             ImGui::SetNextWindowBgAlpha(0.1f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -189,7 +197,7 @@ namespace ui {
             if (!hasVideo) {
                 flags |= ImGuiWindowFlags_NoTitleBar;
             }
-            ImGui::Begin(name, &opened, flags);
+            ImGui::Begin(name, &hasVideo, flags);
 
             auto cursor = ImGui::GetCursorScreenPos();
             auto region = ImGui::GetContentRegionAvail();
@@ -198,11 +206,9 @@ namespace ui {
                 reshapeFn(region);
             }
 
-            // video texture (RTT)
-            if (hasVideo) {
-                ImGui::Image(textureId, ImVec2(region.x, region.y), ImVec2(0, 1), ImVec2(1, 0));
-            }
-
+            // render texture contains video and/or lines && points
+            ImGui::Image(textureId, ImVec2(region.x, region.y), ImVec2(0, 1), ImVec2(1, 0));
+            
             // invisible button
             {
                 ImGui::SetCursorScreenPos(ImVec2(cursor.x, cursor.y));
@@ -263,7 +269,7 @@ namespace ui {
             ImGui::End();
             ImGui::PopStyleVar();
 
-            if (!opened && openedPrevFrame && closeFn) {
+            if (!hasVideo && openedPrevFrame && closeFn) {
                 closeFn();
             }
         }
@@ -273,6 +279,9 @@ namespace ui {
                 size.y != newSize.y;
             size = newSize;
             return changed;
+        }
+        bool hovered() const {
+            return frameHovered || slideHovered;
         }
     };
 
@@ -787,18 +796,19 @@ static void ui::togglePause() {
     }
 }
 static void ui::undoDrawing() {
-    if (fc[0].frameWindow.frameHovered) {
+    
+    if (fc[0].frameWindow.hovered()) {
         fc[0].frameRender.undoDrawing();
     }
-    if (fc[1].frameWindow.frameHovered) {
+    if (fc[1].frameWindow.hovered()) {
         fc[1].frameRender.undoDrawing();
     }
 }
 static void ui::clearDrawing() {
-    if (fc[0].frameWindow.frameHovered) {
+    if (fc[0].frameWindow.hovered()) {
         fc[0].frameRender.clearDrawing();
     }
-    if (fc[1].frameWindow.frameHovered) {
+    if (fc[1].frameWindow.hovered()) {
         fc[1].frameRender.clearDrawing();
     }
 }
@@ -1006,10 +1016,11 @@ static void loadWorkspace() {
     render.frames[1].setBrush(ui::drawLineColor, ui::drawLineWidth);
 }
 
+
 void ui::FrameController::linkChildreen() {
     frameWindow.hoverFrameFn = [this](bool hovered) {
         frameRender.drawReset();
-        frameRender.showCursor(hovered && (ui::workMode == DrawLines) && ImGui::IsKeyDown(ImGuiKey_LeftAlt));
+        frameRender.showCursor(hovered && ImGui::IsKeyDown(ImGuiKey_LeftAlt));
     };
     frameWindow.hoverSlideFn = [this](bool hovered) {
         ui::setSeekTarget(this, hovered);
@@ -1029,6 +1040,7 @@ void ui::FrameController::linkChildreen() {
     frameWindow.closeFn = [this]() {
         this->closeFile();
     };
+    frameWindow.setTextureID(frameRender.fb.tid);
 }
 void ui::FrameController::update(const time_point& now) {
    
@@ -1058,7 +1070,7 @@ void ui::FrameController::openFile(const string& path) {
         const auto& info = player.info;
         frameRender.clearDrawing();
         frameRender.createTexture(info.width, info.height);
-        frameWindow.setTextureID(frameRender.fb.tid);
+        frameWindow.setVideo(true);
         frameWindow.setName(fileName.c_str());
         cout << "File open - ok: " << path << endl;
     }
@@ -1069,7 +1081,9 @@ void ui::FrameController::openFile(const string& path) {
 void ui::FrameController::closeFile() {
     player.stop();
     frameRender.clearDrawing();
-    frameWindow.setTextureID(ImTextureID_Invalid);
+    frameRender.clearTexture();
+    frameWindow.setVideo(false);
+    frameWindow.setName(nullptr);
 }
 void ui::FrameController::togglePause() {
     bool newValue = !(player.ps.paused);

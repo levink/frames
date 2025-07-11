@@ -65,6 +65,7 @@ struct FrameRender {
 
     void createTexture(int16_t width, int16_t height);
     void updateTexture(int16_t width, int16_t height, const uint8_t* pixels);
+    void clearTexture();
     void destroyTexture();
     void reshape(int width, int height);
     void moveCam(int dx, int dy);

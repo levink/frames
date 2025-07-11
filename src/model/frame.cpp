@@ -109,6 +109,9 @@ void FrameRender::updateTexture(int16_t width, int16_t height, const uint8_t* pi
 	gl::updateTexture(imageMesh.textureId, width, height, pixels);
 	imageMesh.textureReady = true;
 }
+void FrameRender::clearTexture() {
+	imageMesh.textureReady = false;
+}
 void FrameRender::destroyTexture() {
 	if (imageMesh.textureId) {
 		glDeleteTextures(1, &imageMesh.textureId);
@@ -287,7 +290,6 @@ void FrameRender::drawStart(int x, int y, DrawType type) {
 		return;
 	}
 	
-	//cout << "draw start " << type << endl;
 	drawType = type;
 	auto pos = toSceneSpace(x, y);
 	auto radius = getLineRadius();
@@ -301,7 +303,6 @@ void FrameRender::drawNext(int x, int y) {
 		return;
 	}
 
-	//cout << "draw next ";
 	auto pos = toSceneSpace(x, y);
 	paint::draw(lines.back(), lineMesh, pos, drawType);
 }
@@ -314,12 +315,10 @@ void FrameRender::drawStop(int x, int y) {
 	auto pos = toSceneSpace(x, y);
 	paint::draw(lines.back(), lineMesh, pos, drawType);
 	drawType = DrawType::None;
-	cout << "draw stop count = " << lines.back().points.size() << endl;
 }
 void FrameRender::drawReset() {
 	if (drawType != DrawType::None) {
 		drawType = DrawType::None;
-		cout << "draw reset" << endl;
 	}
 }
 void FrameRender::undoDrawing() {
