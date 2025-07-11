@@ -57,4 +57,9 @@ void LineMesh::createPoint(size_t vertexOffset, const glm::vec2& pos, float radi
 size_t LineMesh::offset() const {
     return vertex.size();
 }
+void LineMesh::trim(size_t vertexSize) {
+    size_t trimSize = std::min(vertexSize, vertex.size());
+    vertex.resize(trimSize);
+    face.resize(trimSize / size_t(2));
+}
 

@@ -76,7 +76,6 @@ namespace ui {
         }
     };
 
-    //todo: move inside frame window?
     struct Slider {
         float progress = 0;
         bool hold = false;
@@ -498,7 +497,6 @@ namespace ui {
         void togglePause();
         void seekLeft();
         void seekRight();
-        void clearDrawn();
         void updateCursor();
     };
 
@@ -535,6 +533,8 @@ namespace ui {
     static void seekLeft();
     static void seekRight();
     static void togglePause();
+    static void undoDrawing();
+    static void clearDrawing();
     static void saveState(WorkState& ws);
     static void restoreState(const WorkState& ws);
 }
@@ -704,8 +704,8 @@ static void ui::drawKeysWindow() {
     ImGui::SetNextWindowSize(ImVec2(0, 0));
     if (ImGui::Begin("Hot Keys", &ui::openedKeys)) {
         ImGui::Text("Play/pause"); ImGui::SameLine(); ImGui::TextDisabled("[SPACE]");
-        ImGui::Text("Next frame"); ImGui::SameLine(); ImGui::TextDisabled("[RIGHT] or [D]");
-        ImGui::Text("Prev frame"); ImGui::SameLine(); ImGui::TextDisabled("[LEFT] or [A]");
+        ImGui::Text("Next frame"); ImGui::SameLine(); ImGui::TextDisabled("[D] or [RIGHT]");
+        ImGui::Text("Prev frame"); ImGui::SameLine(); ImGui::TextDisabled("[A] or [LEFT]");
 
         ImGui::Separator();
         ImGui::Text("Move video"); ImGui::SameLine(); ImGui::TextDisabled("Mouse LEFT");
@@ -786,25 +786,41 @@ static void ui::togglePause() {
         }
     }
 }
+static void ui::undoDrawing() {
+    if (fc[0].frameWindow.frameHovered) {
+        fc[0].frameRender.undoDrawing();
+    }
+    if (fc[1].frameWindow.frameHovered) {
+        fc[1].frameRender.undoDrawing();
+    }
+}
+static void ui::clearDrawing() {
+    if (fc[0].frameWindow.frameHovered) {
+        fc[0].frameRender.clearDrawing();
+    }
+    if (fc[1].frameWindow.frameHovered) {
+        fc[1].frameRender.clearDrawing();
+    }
+}
 static void ui::saveState(WorkState& ws) {
-    ws.openedColor = ui::openedColor;
-    ws.openedKeys = ui::openedKeys;
-    ws.openedWorkspace = ui::openedWorkspace;
-    ws.splitMode = ui::splitMode;
-    ws.drawLineWidth = ui::drawLineWidth;
+    ws.openedColor      = ui::openedColor;
+    ws.openedKeys       = ui::openedKeys;
+    ws.openedWorkspace  = ui::openedWorkspace;
+    ws.splitMode        = ui::splitMode;
+    ws.drawLineWidth    = ui::drawLineWidth;
     ws.drawLineColor[0] = ui::drawLineColor[0];
     ws.drawLineColor[1] = ui::drawLineColor[1];
     ws.drawLineColor[2] = ui::drawLineColor[2];
 }
 static void ui::restoreState(const WorkState& ws) {
-    ui::openedColor         = ws.openedColor;
-    ui::openedKeys          = ws.openedKeys;
-    ui::openedWorkspace     = ws.openedWorkspace;
-    ui::splitMode           = ws.splitMode;
-    ui::drawLineWidth       = ws.drawLineWidth;
-    ui::drawLineColor[0]    = ws.drawLineColor[0];
-    ui::drawLineColor[1]    = ws.drawLineColor[1];
-    ui::drawLineColor[2]    = ws.drawLineColor[2];
+    ui::openedColor      = ws.openedColor;
+    ui::openedKeys       = ws.openedKeys;
+    ui::openedWorkspace  = ws.openedWorkspace;
+    ui::splitMode        = ws.splitMode;
+    ui::drawLineWidth    = ws.drawLineWidth;
+    ui::drawLineColor[0] = ws.drawLineColor[0];
+    ui::drawLineColor[1] = ws.drawLineColor[1];
+    ui::drawLineColor[2] = ws.drawLineColor[2];
 
     if (splitMode == SplitMode::Single) {
         singleModeTarget = &fc[0].frameWindow;
@@ -909,8 +925,7 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         ui::seekRight();
     }
     else if (key.pressed(ESC)) {
-        fc[0].clearDrawn();
-        fc[1].clearDrawn();
+        ui::clearDrawing();
     }
     else if (key.is(Mod::ALT, Q, Q)) {
         cmd::quitProgram();
@@ -920,6 +935,9 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.is(Mod::CONTROL, O)) {
         cmd::openFile();
+    }
+    else if (key.is(Mod::CONTROL, Z)) {
+        ui::undoDrawing();
     }
     else if (key.is(LEFT_ALT) && action != Action::REPEAT) {
         auto mode = action == Action::PRESS ?
@@ -1038,7 +1056,7 @@ void ui::FrameController::openFile(const string& path) {
     if (player.start(path.c_str())) {
         const auto fileName = fs::path(path).filename().string();
         const auto& info = player.info;
-        frameRender.clearDrawn();
+        frameRender.clearDrawing();
         frameRender.createTexture(info.width, info.height);
         frameWindow.setTextureID(frameRender.fb.tid);
         frameWindow.setName(fileName.c_str());
@@ -1050,7 +1068,7 @@ void ui::FrameController::openFile(const string& path) {
 }
 void ui::FrameController::closeFile() {
     player.stop();
-    frameRender.clearDrawn();
+    frameRender.clearDrawing();
     frameWindow.setTextureID(ImTextureID_Invalid);
 }
 void ui::FrameController::togglePause() {
@@ -1062,9 +1080,6 @@ void ui::FrameController::seekLeft() {
 }
 void ui::FrameController::seekRight() {
     player.seekRight();
-}
-void ui::FrameController::clearDrawn() {
-    frameRender.clearDrawn();
 }
 void ui::FrameController::updateCursor() {
     frameRender.showCursor(frameWindow.frameHovered && (ui::workMode == DrawLines));

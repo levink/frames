@@ -322,11 +322,18 @@ void FrameRender::drawReset() {
 		cout << "draw reset" << endl;
 	}
 }
-void FrameRender::clearDrawn() {
+void FrameRender::undoDrawing() {
+	if (lines.empty()) {
+		return;
+	}
+
+	lineMesh.trim(lines.back().meshOffset);
+	lines.pop_back();
+}
+void FrameRender::clearDrawing() {
 	lines.clear();
 	lineMesh.clear();
 }
-
 
 static glm::vec2 dirOrDefault(const glm::vec2& p1, const glm::vec2& p2, const glm::vec2& defVal) {
 	constexpr float eps = 1.f;

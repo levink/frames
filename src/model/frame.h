@@ -77,7 +77,8 @@ struct FrameRender {
     void drawNext(int x, int y);
     void drawStop(int x, int y);
     void drawReset();
-    void clearDrawn();
+    void undoDrawing();
+    void clearDrawing();
 
 private:
     glm::vec2 toOpenGLSpace(int x, int y) const;
