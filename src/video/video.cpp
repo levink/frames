@@ -688,37 +688,57 @@ namespace video {
         auto pts = info.progressToPts(progress);
         seekPts(pts);
     }
-    void Player::seekLeft() {
+    void Player::seekLeft(bool isLong) {
         if (!ps.started) {
             return;
         }
 
         if (ps.paused) {
-            ps.update = true;
-            frameQ.seekPrevFrame(loader);
-            frameQ.print();
+            if (isLong) {
+                ps.update = true;
+                constexpr int SECOND_HALF = 1000000 / 2;
+                auto dif = info.microsToPts(SECOND_HALF);
+                auto pts = std::min(info.durationPts, ps.framePts - dif);
+                seekPts(pts);
+            }
+            else {
+                ps.update = true;
+                frameQ.seekPrevFrame(loader);
+                frameQ.print();
+            }
         }
         else {
             // minus 1 second
-            auto oneSecond = info.microsToPts(1000000);
-            auto pts = std::max(0LL, ps.framePts - oneSecond);
+            constexpr int SECOND = 1000000;
+            auto dif = info.microsToPts(isLong ? (3 * SECOND ): SECOND);
+            auto pts = std::max(0LL, ps.framePts - dif);
             seekPts(pts);
         }
     }
-    void Player::seekRight() {
+    void Player::seekRight(bool isLong) {
         if (!ps.started) {
             return;
         }
 
         if (ps.paused) {
-            ps.update = true;
-            frameQ.seekNextFrame(loader);
-            frameQ.print();
+            if (isLong) {
+                ps.update = true;
+                constexpr int SECOND_HALF = 1000000 / 2;
+                auto dif = info.microsToPts(SECOND_HALF);
+                auto pts = std::min(info.durationPts, ps.framePts + dif);
+                seekPts(pts);
+            }
+            else {
+                ps.update = true;
+                frameQ.seekNextFrame(loader);
+                frameQ.print();
+            }
         }
         else {
             // plus 1 second
-            auto oneSecond = info.microsToPts(1000000);
-            auto pts = std::min(info.durationPts, ps.framePts + oneSecond);
+            constexpr int SECOND = 1000000;
+            auto dif = info.microsToPts(isLong ? (3 * SECOND) : SECOND);
+            auto pts = std::min(info.durationPts, ps.framePts + dif);
             seekPts(pts);
         }
     }

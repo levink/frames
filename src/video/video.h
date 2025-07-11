@@ -161,8 +161,8 @@ namespace video {
         bool start(const char* fileName);
         void stop();
         void seekProgress(float progress, bool hold);
-        void seekLeft();
-        void seekRight();
+        void seekLeft(bool isLong);
+        void seekRight(bool isLong);
         void seekPts(int64_t pts);
         void pause(bool paused);
         bool hasUpdate(const time_point& now);

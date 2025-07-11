@@ -504,8 +504,8 @@ namespace ui {
         void openFile(const string& path);
         void closeFile();
         void togglePause();
-        void seekLeft();
-        void seekRight();
+        void seekLeft(bool isLong);
+        void seekRight(bool isLong);
         void updateCursor();
     };
 
@@ -539,8 +539,8 @@ namespace ui {
     static void setSplitMode(SplitMode mode);
     static void setSeekTarget(FrameController* target, bool hovered);
     static void setWorkMode(WorkMode mode);
-    static void seekLeft();
-    static void seekRight();
+    static void seekLeft(bool isLong);
+    static void seekRight(bool isLong);
     static void togglePause();
     static void undoDrawing();
     static void clearDrawing();
@@ -761,22 +761,21 @@ static void ui::setWorkMode(WorkMode mode) {
     workMode = mode;
     cout << "set work mode " << workMode << endl;
 }
-static void ui::seekLeft() {
+static void ui::seekLeft(bool isLong) {
     if (ui::seekTarget) {
-        ui::seekTarget->seekLeft();
+        ui::seekTarget->seekLeft(isLong);
     }
     else {
-        fc[0].seekLeft(); //todo: longseek?
-        fc[1].seekLeft();
+        fc[0].seekLeft(isLong);
+        fc[1].seekLeft(isLong);
     }
-    
 }
-static void ui::seekRight() {
+static void ui::seekRight(bool isLong) {
     if (ui::seekTarget) {
-        ui::seekTarget->seekRight();
+        ui::seekTarget->seekRight(isLong);
     } else {
-        fc[0].seekRight();
-        fc[1].seekRight();
+        fc[0].seekRight(isLong);
+        fc[1].seekRight(isLong);
     }
 }
 static void ui::togglePause() {
@@ -908,6 +907,7 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)){
                 frame.drawNext(mx, my);
             }
+            frame.setBrush(ui::drawLineColor, ui::drawLineWidth);
             frame.moveCursor(mx, my);
         }
     }
@@ -925,14 +925,20 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
         std::cout << "Reload shaders" << std::endl;
         render.reloadShaders();
     }
-    else if (key.pressed(SPACE)) {
+    else if (key.pressed(SPACE) || key.is(Mod::ALT, SPACE)) {
         ui::togglePause();
     }
     else if (key.pressed(LEFT) || key.pressed(A)) {
-        ui::seekLeft();
+        ui::seekLeft(false);
     }
     else if (key.pressed(RIGHT) || key.pressed(D)) {
-        ui::seekRight();
+        ui::seekRight(false);
+    }
+    else if (key.pressed(Z)) {
+        ui::seekLeft(true);
+    }
+    else if (key.pressed(X)) {
+        ui::seekRight(true);
     }
     else if (key.pressed(ESC)) {
         ui::clearDrawing();
@@ -949,6 +955,12 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(Mod::CONTROL, Z)) {
         ui::undoDrawing();
     }
+    /*else if (key.is(Mod::CONTROL, LEFT) || key.is(Mod::CONTROL, A)) {
+        ui::seekLeft(true);
+    }
+    else if (key.is(Mod::CONTROL, RIGHT) || key.is(Mod::CONTROL, D)) {
+        ui::seekRight(true);
+    }*/
     else if (key.is(LEFT_ALT) && action != Action::REPEAT) {
         auto mode = action == Action::PRESS ?
             ui::WorkMode::DrawLines :
@@ -1089,11 +1101,11 @@ void ui::FrameController::togglePause() {
     bool newValue = !(player.ps.paused);
     player.pause(newValue);
 }
-void ui::FrameController::seekLeft() {
-    player.seekLeft();
+void ui::FrameController::seekLeft(bool isLong) {
+    player.seekLeft(isLong);
 }
-void ui::FrameController::seekRight() {
-    player.seekRight();
+void ui::FrameController::seekRight(bool isLong) {
+    player.seekRight(isLong);
 }
 void ui::FrameController::updateCursor() {
     frameRender.showCursor(frameWindow.frameHovered && (ui::workMode == DrawLines));
