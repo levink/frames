@@ -51,6 +51,10 @@ namespace ui {
             return win;
         }
         void reshape(int w, int h) {
+            if (!w || !h) {
+                return;
+            }
+
             width = w;
             height = h;
         }
@@ -567,14 +571,18 @@ static void ui::newFrame() {
 }
 static void ui::draw() {  
 
+    auto workSize = ImGui::GetMainViewport()->WorkSize;
+    auto winPadding = ImGui::GetStyle().WindowPadding;
+    if (!workSize.x || !workSize.y) {
+        return;
+    }
+
     float menuHeight = 0.f;
     ui::drawMainMenuBar(menuHeight);
 
-    auto workSize = ImGui::GetMainViewport()->WorkSize;
-    auto winPadding = ImGui::GetStyle().WindowPadding;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::SetNextWindowPos(ImVec2(0, menuHeight), ImGuiCond_Once);
+    ImGui::SetNextWindowPos(ImVec2(0, menuHeight));
     ImGui::SetNextWindowSize(workSize);
     ImGui::SetNextWindowBgAlpha(0.0f);
     ImGui::Begin("Main", nullptr,
@@ -928,10 +936,10 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.pressed(SPACE) || key.is(Mod::ALT, SPACE)) {
         ui::togglePause();
     }
-    else if (key.pressed(LEFT) || key.pressed(A)) {
+    else if (key.pressed(LEFT) || key.pressed(A) || key.is(Mod::ALT, A)) {
         ui::seekLeft(false);
     }
-    else if (key.pressed(RIGHT) || key.pressed(D)) {
+    else if (key.pressed(RIGHT) || key.pressed(D) || key.is(Mod::ALT, D)) {
         ui::seekRight(false);
     }
     else if (key.pressed(Z)) {
@@ -1022,7 +1030,6 @@ static void loadWorkspace() {
     }
 
     //todo: make more clean
-
 
     render.frames[0].setBrush(ui::drawLineColor, ui::drawLineWidth);
     render.frames[1].setBrush(ui::drawLineColor, ui::drawLineWidth);
