@@ -539,7 +539,7 @@ namespace ui {
     static void draw();
     static void drawMainMenuBar(float& height);
     static void drawColorWindow();
-    static void drawKeysWindow();
+    static void drawHotKeysWindow();
     static void setSplitMode(SplitMode mode);
     static void setSeekTarget(FrameController* target, bool hovered);
     static void setWorkMode(WorkMode mode);
@@ -648,9 +648,8 @@ static void ui::draw() {
     }
     }
 
-    //ImGui::SetNextWindowPos(ImVec2(100, menuHeight + workSize.y - 300), ImGuiCond_FirstUseEver);
     ui::drawColorWindow();
-    ui::drawKeysWindow();
+    ui::drawHotKeysWindow();
 }
 static void ui::drawMainMenuBar(float& height) {
     if (ImGui::BeginMainMenuBar()) {
@@ -685,13 +684,13 @@ static void ui::drawMainMenuBar(float& height) {
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Presets")) {
+       /* if (ImGui::BeginMenu("Presets")) {
             if (ImGui::MenuItem("Landscape [1280x720]")) { mainWindow.setSize(1280, 720); }
             if (ImGui::MenuItem("Portrait [720x1280]")) { mainWindow.setSize(720, 1280); }
             if (ImGui::MenuItem("Square [1080x1080]")) { mainWindow.setSize(1080, 1080); }
             if (ImGui::MenuItem("Square [720x720]")) { mainWindow.setSize(960, 960); }
             ImGui::EndMenu();
-        }
+        }*/
 
         height = ImGui::GetWindowSize().y;
         ImGui::EndMainMenuBar();
@@ -702,9 +701,12 @@ static void ui::drawColorWindow() {
         return;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Color", &ui::openedColor)) {
-        bool changed = ImGui::DragInt("Width", &ui::drawLineWidth, 0.5f, 2, 50);
+    ImGui::SetNextWindowPos(ImVec2(300, 150), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250, 300), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Color", &ui::openedColor, ImGuiWindowFlags_NoCollapse)) {
+        
+        bool changed = false;
+        changed |= ImGui::DragInt("Width", &ui::drawLineWidth, 0.5f, 2, 50);
         changed |= ImGui::ColorEdit3("Color", ui::drawLineColor);
         if (changed) {
             fc[0].frameRender.setBrush(ui::drawLineColor, ui::drawLineWidth); //todo: render.setBrush() instead of framecontroller?
@@ -713,26 +715,38 @@ static void ui::drawColorWindow() {
     }
     ImGui::End();
 }
-static void ui::drawKeysWindow() {
+static void ui::drawHotKeysWindow() {
     if (!ui::openedKeys) {
         return;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(0, 0));
-    if (ImGui::Begin("Hot Keys", &ui::openedKeys)) {
+    ImGui::SetNextWindowPos(ImVec2(600, 150), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250, 300), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Hot Keys", &ui::openedKeys, ImGuiWindowFlags_NoCollapse)) {
         ImGui::Text("Play/pause"); ImGui::SameLine(); ImGui::TextDisabled("[SPACE]");
-        ImGui::Text("Next frame"); ImGui::SameLine(); ImGui::TextDisabled("[D] or [RIGHT]");
         ImGui::Text("Prev frame"); ImGui::SameLine(); ImGui::TextDisabled("[A] or [LEFT]");
+        ImGui::Text("Next frame"); ImGui::SameLine(); ImGui::TextDisabled("[D] or [RIGHT]");
+        
+        ImGui::BeginGroup();
+        ImGui::Text("Seek back"); ImGui::SameLine(); ImGui::TextDisabled("[Z]");
+        ImGui::EndGroup();
+        ImGui::SetItemTooltip("-0.25s when paused\n-1.00s when normal playing");
+
+        ImGui::BeginGroup();
+        ImGui::Text("Seek front"); ImGui::SameLine(); ImGui::TextDisabled("[X]");
+        ImGui::EndGroup();
+        ImGui::SetItemTooltip("+0.25s when paused\n+1.00s when normal playing");
 
         ImGui::Separator();
         ImGui::Text("Move video"); ImGui::SameLine(); ImGui::TextDisabled("Mouse LEFT");
         ImGui::Text("Zoom video"); ImGui::SameLine(); ImGui::TextDisabled("Mouse WHEEL");
 
         ImGui::Separator();
-        ImGui::Text("Clear drawn"); ImGui::SameLine(); ImGui::TextDisabled("[ESC]");
         ImGui::Text("Draw points"); ImGui::SameLine(); ImGui::TextDisabled("[ALT] + Mouse LEFT");
         ImGui::Text("Draw lines"); ImGui::SameLine(); ImGui::TextDisabled("[ALT] + Mouse RIGHT");
         ImGui::Text("Set width"); ImGui::SameLine(); ImGui::TextDisabled("[ALT] + Mouse WHEEL");
+        ImGui::Text("Clear all"); ImGui::SameLine(); ImGui::TextDisabled("[ESC]");
+        ImGui::Text("Clear last"); ImGui::SameLine(); ImGui::TextDisabled("[CTRL + Z]");
     }
     ImGui::End();
 }
