@@ -18,10 +18,10 @@ static int64_t prevSeekPosition(const RGBFrame* from) {
     return from->pts - 1;
 }
 static int64_t nextSeekPosition(const RGBFrame* from) {
-    return from->pts + from->duration;
+    return from->pts + from->dur;
 }
 static bool checkPts(const RGBFrame* left, const RGBFrame* right) {
-    return left->pts + left->duration == right->pts;
+    return left->pts + left->dur == right->pts;
 }
 
 namespace video {
@@ -52,7 +52,7 @@ namespace video {
         if (frame) {
             auto lock = std::lock_guard(mtx);
             frame->pts = -1;
-            frame->duration = 0;
+            frame->dur = 0;
             items.push_back(frame);
         }
     }
@@ -60,7 +60,7 @@ namespace video {
         auto lock = std::lock_guard(mtx);
         for (auto frame : frames) {
             frame->pts = -1;
-            frame->duration = 0;
+            frame->dur = 0;
         }
         items.insert(items.end(), frames.begin(), frames.end());
     }
@@ -122,9 +122,15 @@ namespace video {
         }
     }
     int FrameConverter::toRGB(const AVFrame* frame, RGBFrame& result) {
+        
         destFrame[0] = result.pixels;
-        destLineSize[0] = RGBFrame::BYTES_PER_PIXEL * frame->width;
-        int ret = sws_scale(swsContext, frame->data, frame->linesize, 0, frame->height, destFrame, destLineSize);
+        destLineSize[0] = result.lineSize;
+
+        int ret = sws_scale(swsContext, 
+            frame->data, frame->linesize, 0, frame->height, 
+            destFrame, destLineSize
+        );
+
         destFrame[0] = nullptr;
         destLineSize[0] = 0;
         return ret;
@@ -271,7 +277,7 @@ namespace video {
         }
 
         result.pts = getFramePTS(frame);
-        result.duration = frame->duration;
+        result.dur = frame->duration;
         return true;
     }
     bool VideoReader::seek(int64_t pts) {
@@ -450,7 +456,7 @@ namespace video {
                         item = pool.get();
                     }
                     item->pts = -1;
-                    item->duration = 0;
+                    item->dur = 0;
                 }
 
                 size_t writeIndex = 0;
@@ -458,7 +464,7 @@ namespace video {
                 auto frame = prevCache[writeIndex];
                 while (reader.read(*frame)) {
                     auto min = frame->pts;
-                    auto max = frame->pts + frame->duration;
+                    auto max = frame->pts + frame->dur;
                     if (min <= seekPts && seekPts < max) {
                         foundInCache = true;
                         break;
@@ -540,7 +546,7 @@ namespace video {
         return nullptr;
     }
     void FrameQueue::print() const {
-        std::cout << "[";
+        /*std::cout << "[";
         for (size_t i = 0; i < items.size(); i++) {
             auto elem = items[i];
             char mark = (i == selected) ? '=' : ' ';
@@ -554,7 +560,7 @@ namespace video {
         else {
             std::cout << "pts=???";
         }
-        std::cout << std::endl;
+        std::cout << std::endl;*/
     }
     void FrameQueue::play(FrameLoader& loader) {
         if (loadDir < 0) {
@@ -791,7 +797,7 @@ namespace video {
                 const RGBFrame* frame = frameQ.next();
                 if (frame) {
                     auto deltaPts = durationPts - ps.frameDur;
-                    if (deltaPts < frame->duration) {
+                    if (deltaPts < frame->dur) {
                         lastUpdate = now - microseconds(info.ptsToMicros(deltaPts));
                     }
                     else {
@@ -800,7 +806,7 @@ namespace video {
 
                     ps.update = false;
                     ps.framePts = frame->pts;
-                    ps.frameDur = frame->duration;
+                    ps.frameDur = frame->dur;
                     ps.progress = info.calcProgress(frame->pts);
                     return true;
                 }
@@ -817,7 +823,7 @@ namespace video {
             if (frame) {
                 ps.update = false;
                 ps.framePts = frame->pts;
-                ps.frameDur = frame->duration;
+                ps.frameDur = frame->dur;
                 ps.progress = info.calcProgress(frame->pts);
                 return true;
             }

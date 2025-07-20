@@ -40,6 +40,42 @@ namespace ui {
         }
     }
 
+    enum SplitMode {
+        Single = 0,
+        HSplit = 1,
+        VSplit = 2
+    };
+
+    enum WorkMode {
+        MoveVideo = 0,
+        DrawLines = 1
+    };
+
+    class WorkModeHelper {
+        bool alt = false;
+        WorkMode modeActive = WorkMode::MoveVideo;
+        WorkMode modeResult = WorkMode::MoveVideo;
+        static WorkMode update(WorkMode mode, bool alt) {
+            if (alt) {
+                return static_cast<WorkMode>((mode + 1) % 2);
+            }
+            return mode;
+        }
+    public:
+        void holdAlt(bool pressed) {
+            alt = pressed;
+            modeResult = update(modeActive, alt);
+        }
+        void set(WorkMode value) {
+            modeActive = value;
+            modeResult = update(modeActive, alt);
+            cout << "set work mode " << modeActive << " alt=" << alt << endl;
+        }
+        const WorkMode& get() const {
+            return modeResult;
+        }
+    };
+
     struct MainWindow {
     private:
         GLFWwindow* win = nullptr;
@@ -510,22 +546,12 @@ namespace ui {
         void togglePause();
         void seekLeft(bool isLong);
         void seekRight(bool isLong);
-        void updateCursor();
+        void updateCursor(const WorkMode& mode);
     };
 
-    enum SplitMode {
-        Single = 0,
-        HSplit = 1,
-        VSplit = 2
-    };
 
-    enum WorkMode {
-        MoveVideo = 0,
-        DrawLines = 1
-    };
-
+    WorkModeHelper workMode;  
     int splitMode = SplitMode::Single;
-    int workMode = WorkMode::MoveVideo;
     bool openedColor = true;
     bool openedKeys = true;
     bool openedWorkspace = true;
@@ -542,12 +568,12 @@ namespace ui {
     static void drawHotKeysWindow();
     static void setSplitMode(SplitMode mode);
     static void setSeekTarget(FrameController* target, bool hovered);
-    static void setWorkMode(WorkMode mode);
+    static void setLineWidth(int step);
     static void seekLeft(bool isLong);
     static void seekRight(bool isLong);
     static void togglePause();
     static void undoDrawing();
-    static void clearDrawing();
+    static void clearDrawing(); 
     static void saveState(WorkState& ws);
     static void restoreState(const WorkState& ws);
 }
@@ -779,9 +805,9 @@ static void ui::setSeekTarget(FrameController* target, bool hovered) {
         seekTarget = nullptr;
     }
 }
-static void ui::setWorkMode(WorkMode mode) {
-    workMode = mode;
-    cout << "set work mode " << workMode << endl;
+static void ui::setLineWidth(int step) {
+    float delta = step * std::max(1.f, ui::drawLineWidth * 0.2f);
+    ui::drawLineWidth += delta;
 }
 static void ui::seekLeft(bool isLong) {
     if (ui::seekTarget) {
@@ -884,7 +910,8 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
     const int& dy = io.MouseDelta.y;
     const bool hasDelta = dx || dy;
 
-    if (ui::workMode == ui::WorkMode::MoveVideo) {
+    const auto& workMode = ui::workMode.get();
+    if (workMode == ui::WorkMode::MoveVideo) {
 
         if (io.MouseWheel) {
             bool ctrl = ImGui::IsKeyDown(ImGuiMod_Ctrl);
@@ -900,16 +927,16 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
             }
         }
     }
-    else if (ui::workMode == ui::WorkMode::DrawLines) {
+    else if (workMode == ui::WorkMode::DrawLines) {
 
         if (io.MouseWheel) {
-            int delta = std::max(1.f, ui::drawLineWidth * 0.2f);
-            ui::drawLineWidth += io.MouseWheel * delta;
-            frame.setBrush(ui::drawLineColor, ui::drawLineWidth);
+            ui::setLineWidth(io.MouseWheel);
+            //todo: refactoring?
+            fc[0].frameRender.setBrush(ui::drawLineColor, ui::drawLineWidth);
+            fc[1].frameRender.setBrush(ui::drawLineColor, ui::drawLineWidth);
         }
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            
             DrawType drawMode =
                 ImGui::IsMouseDown(ImGuiMouseButton_Left) ? DrawType::Points :
                 ImGui::IsMouseDown(ImGuiMouseButton_Right) ? DrawType::Segments : 
@@ -918,18 +945,12 @@ static void mouseCallback(FrameRender& frame, int mx, int my) {
         }
         else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
             frame.drawStop(mx, my);
-
-            auto mode = ImGui::IsKeyDown(ImGuiKey_LeftAlt) ?
-                ui::WorkMode::DrawLines : ui::WorkMode::MoveVideo;
-            ui::setWorkMode(mode);
-            fc[0].updateCursor();
-            fc[1].updateCursor();
         }
         else if (hasDelta) {
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)){
+            bool needDraw = ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right);
+            if (needDraw) {
                 frame.drawNext(mx, my);
             }
-            frame.setBrush(ui::drawLineColor, ui::drawLineWidth);
             frame.moveCursor(mx, my);
         }
     }
@@ -950,10 +971,10 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.pressed(SPACE) || key.is(Mod::ALT, SPACE)) {
         ui::togglePause();
     }
-    else if (key.pressed(LEFT) || key.pressed(A) || key.is(Mod::ALT, A)) {
+    else if (key.pressed(LEFT) || key.pressed(A)) {
         ui::seekLeft(false);
     }
-    else if (key.pressed(RIGHT) || key.pressed(D) || key.is(Mod::ALT, D)) {
+    else if (key.pressed(RIGHT) || key.pressed(D)) {
         ui::seekRight(false);
     }
     else if (key.pressed(Z)) {
@@ -977,19 +998,23 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     else if (key.is(Mod::CONTROL, Z)) {
         ui::undoDrawing();
     }
-    /*else if (key.is(Mod::CONTROL, LEFT) || key.is(Mod::CONTROL, A)) {
-        ui::seekLeft(true);
+    else if (key.pressed(KEY_1)) {
+        ui::workMode.set(ui::WorkMode::MoveVideo);
+        //todo: refactoring?
+        fc[0].updateCursor(ui::workMode.get());
+        fc[1].updateCursor(ui::workMode.get());
     }
-    else if (key.is(Mod::CONTROL, RIGHT) || key.is(Mod::CONTROL, D)) {
-        ui::seekRight(true);
-    }*/
+    else if (key.pressed(KEY_2)) {
+        ui::workMode.set(ui::WorkMode::DrawLines);
+        //todo: refactoring?
+        fc[0].updateCursor(ui::workMode.get());
+        fc[1].updateCursor(ui::workMode.get());
+    }
     else if (key.is(LEFT_ALT) && action != Action::REPEAT) {
-        auto mode = action == Action::PRESS ?
-            ui::WorkMode::DrawLines :
-            ui::WorkMode::MoveVideo;
-        ui::setWorkMode(mode);
-        fc[0].updateCursor();
-        fc[1].updateCursor();
+        ui::workMode.holdAlt(action == Action::PRESS);
+        //todo: refactoring?
+        fc[0].updateCursor(ui::workMode.get());
+        fc[1].updateCursor(ui::workMode.get());
     }
 }
 static bool loadGLES(GLFWwindow* window) {
@@ -1044,7 +1069,6 @@ static void loadWorkspace() {
     }
 
     //todo: make more clean
-
     render.frames[0].setBrush(ui::drawLineColor, ui::drawLineWidth);
     render.frames[1].setBrush(ui::drawLineColor, ui::drawLineWidth);
 }
@@ -1053,7 +1077,7 @@ static void loadWorkspace() {
 void ui::FrameController::linkChildreen() {
     frameWindow.hoverFrameFn = [this](bool hovered) {
         frameRender.drawReset();
-        frameRender.showCursor(hovered && ImGui::IsKeyDown(ImGuiKey_LeftAlt));
+        frameRender.showCursor(hovered && ui::workMode.get() == DrawLines);
     };
     frameWindow.hoverSlideFn = [this](bool hovered) {
         ui::setSeekTarget(this, hovered);
@@ -1128,8 +1152,8 @@ void ui::FrameController::seekLeft(bool isLong) {
 void ui::FrameController::seekRight(bool isLong) {
     player.seekRight(isLong);
 }
-void ui::FrameController::updateCursor() {
-    frameRender.showCursor(frameWindow.frameHovered && (ui::workMode == DrawLines));
+void ui::FrameController::updateCursor(const WorkMode& mode) {
+    frameRender.showCursor(frameWindow.frameHovered && mode == DrawLines);
 }
 
 int main(int argc, char* argv[]) {
