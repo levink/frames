@@ -1,10 +1,10 @@
 #pragma once
 
 namespace resources {
-	static const char* programName = "Frames Player by Levin K. (v1.0.0)";
-	static const char* linesShader = "../../data/shaders/lines.glsl";
-	static const char* pointShader = "../../data/shaders/point.glsl";
-	static const char* videoShader = "../../data/shaders/video.glsl";
-	static const char* font =		 "../../data/fonts/calibri.ttf";
-	static const char* workspace =	 "./workspace.ini";
+	extern const char* programName;
+	extern const char* linesShader;
+	extern const char* pointShader;
+	extern const char* videoShader;
+	extern const char* font;	
+	extern const char* workspace;
 }

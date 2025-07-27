@@ -9,8 +9,12 @@ void Camera::reshape(int w, int h) {
     updateMatrix();
 }
 
-void Camera::init(const glm::vec2& position, float zoom) {
-    offset = { position.x, position.y, 0 };
+void Camera::init(const glm::vec2& imageCenter, float zoom) {
+    degrees = 0;
+    radians = 0.f;
+    pivot.x = imageCenter.x;
+    pivot.y = imageCenter.y;
+    offset = { -pivot.x, -pivot.y, 0 };
     scale = { zoom, zoom, 1 };
     updateMatrix();
 }
@@ -28,9 +32,23 @@ void Camera::zoom(float value) {
     updateMatrix();
 }
 
+void Camera::rotate(float deltaDegrees) {
+    constexpr float DEG_TO_RAD = 3.1415926f / 180.f;
+    degrees += deltaDegrees;
+    degrees = degrees % 360;
+    radians = degrees * DEG_TO_RAD;
+    updateMatrix();
+}
+
 void Camera::updateMatrix() {
+  
     view = glm::scale(glm::mat4(1), scale);
     view = glm::translate(view, offset);
+    
+    view = glm::translate(view, pivot);
+    view = glm::rotate(view, radians, { 0, 0, -1 });
+    view = glm::translate(view, -pivot);
+    
     pv_inverse = glm::inverse(proj * view);
     scale_inverse = std::abs(scale.x) < 0.01f ? 
         (1.f) :

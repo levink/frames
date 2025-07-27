@@ -33,6 +33,7 @@ add_executable(app
 	src/video/video.cpp
 	src/main.cpp
 	src/render.cpp
+	src/resources.cpp
 	src/workstate.cpp
 )
 target_include_directories(app PRIVATE ${PROJECT_SOURCE_DIR}/src)

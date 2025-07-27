@@ -574,6 +574,7 @@ namespace ui {
     static void togglePause();
     static void undoDrawing();
     static void clearDrawing(); 
+    static void rotateVideo(float degrees);
     static void saveState(WorkState& ws);
     static void restoreState(const WorkState& ws);
 }
@@ -859,6 +860,14 @@ static void ui::clearDrawing() {
         fc[1].frameRender.clearDrawing();
     }
 }
+static void ui::rotateVideo(float degrees) {
+    if (fc[0].frameWindow.hovered()) {
+        fc[0].frameRender.cam.rotate(degrees);
+    }
+    if (fc[1].frameWindow.hovered()) {
+        fc[1].frameRender.cam.rotate(degrees);
+    }
+}
 static void ui::saveState(WorkState& ws) {
     ws.openedColor      = ui::openedColor;
     ws.openedKeys       = ui::openedKeys;
@@ -985,6 +994,12 @@ static void keyCallback(GLFWwindow* window, int keyCode, int scanCode, int actio
     }
     else if (key.pressed(ESC)) {
         ui::clearDrawing();
+    }
+    else if (key.pressed(COMMA)) {
+        ui::rotateVideo(-90);
+    }
+    else if (key.pressed(PERIOD)) {
+        ui::rotateVideo(90);
     }
     else if (key.is(Mod::ALT, Q, Q)) {
         cmd::quitProgram();

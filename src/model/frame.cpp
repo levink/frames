@@ -103,7 +103,7 @@ void FrameRender::createTexture(int16_t width, int16_t height) {
 	imageMesh = ImageMesh::createImageMesh(width, height);
 	imageMesh.textureId = gl::createTexture(width, height);
 	imageMesh.textureReady = false;
-    cam.init({ -width * 0.5f, -height * 0.5f }, 1.f);
+    cam.init({ width * 0.5f, height * 0.5f }, 1.f);
 }
 void FrameRender::updateTexture(int16_t width, int16_t height, const uint8_t* pixels) {
 	gl::updateTexture(imageMesh.textureId, width, height, pixels);
