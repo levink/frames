@@ -7,7 +7,7 @@
 #endif
 
 namespace resources {
-	const char* programName = "Frames Player by Levin K. (v1.0.0)";
+	const char* programName = "Frames Player by Levin K. (v1.0.1)";
 	const char* linesShader = _FRAMES_DATA_PATH("./data/shaders/lines.glsl");
 	const char* pointShader = _FRAMES_DATA_PATH("./data/shaders/point.glsl");
 	const char* videoShader = _FRAMES_DATA_PATH("./data/shaders/video.glsl");
