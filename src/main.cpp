@@ -728,8 +728,8 @@ static void ui::drawColorWindow() {
         return;
     }
 
-    ImGui::SetNextWindowPos(ImVec2(300, 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(250, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(285, 70), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(460, 100), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Color", &ui::openedColor, ImGuiWindowFlags_NoCollapse)) {
         
         bool changed = false;
@@ -747,33 +747,65 @@ static void ui::drawHotKeysWindow() {
         return;
     }
 
-    ImGui::SetNextWindowPos(ImVec2(600, 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(250, 300), ImGuiCond_FirstUseEver);
+
+    ImGui::SetNextWindowPos(ImVec2(285, 200), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(460, 350), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Hot Keys", &ui::openedKeys, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::Text("Play/pause"); ImGui::SameLine(); ImGui::TextDisabled("[SPACE]");
-        ImGui::Text("Prev frame"); ImGui::SameLine(); ImGui::TextDisabled("[A] or [LEFT]");
-        ImGui::Text("Next frame"); ImGui::SameLine(); ImGui::TextDisabled("[D] or [RIGHT]");
+
+        {
+            constexpr int w1 = 100;
+            ImGui::TextDisabled("[SPACE]");         ImGui::SameLine(w1); ImGui::Text("Play/pause");
+            ImGui::TextDisabled("[A] or [LEFT]");   ImGui::SameLine(w1); ImGui::Text("Prev frame");
+            ImGui::TextDisabled("[D] or [RIGHT]");  ImGui::SameLine(w1); ImGui::Text("Next frame");
+   
+            ImGui::TextDisabled("[Z]"); ImGui::SameLine(w1); ImGui::Text("Seek back (?)");  
+            ImGui::SetItemTooltip("-0.25s when paused\n-1.00s when normal playing");
         
-        ImGui::BeginGroup();
-        ImGui::Text("Seek back"); ImGui::SameLine(); ImGui::TextDisabled("[Z]");
-        ImGui::EndGroup();
-        ImGui::SetItemTooltip("-0.25s when paused\n-1.00s when normal playing");
+            ImGui::TextDisabled("[X]"); ImGui::SameLine(w1); ImGui::Text("Seek front (?)");
+            ImGui::SetItemTooltip("+0.25s when paused\n+1.00s when normal playing");
 
-        ImGui::BeginGroup();
-        ImGui::Text("Seek front"); ImGui::SameLine(); ImGui::TextDisabled("[X]");
-        ImGui::EndGroup();
-        ImGui::SetItemTooltip("+0.25s when paused\n+1.00s when normal playing");
+            ImGui::TextDisabled("[ESC]"); ImGui::SameLine(w1); ImGui::Text("Clear all drawn");
+            ImGui::TextDisabled("[CTRL + Z]"); ImGui::SameLine(w1); ImGui::Text("Clear last drawn");
 
-        ImGui::Separator();
-        ImGui::Text("Move video"); ImGui::SameLine(); ImGui::TextDisabled("Mouse LEFT");
-        ImGui::Text("Zoom video"); ImGui::SameLine(); ImGui::TextDisabled("Mouse WHEEL");
+            ImGui::TextDisabled("[<]"); ImGui::SameLine(w1); ImGui::Text("Rotate -90");
+            ImGui::TextDisabled("[>]"); ImGui::SameLine(w1); ImGui::Text("Rotate +90");
+        }
+        
 
         ImGui::Separator();
-        ImGui::Text("Draw points"); ImGui::SameLine(); ImGui::TextDisabled("[ALT] + Mouse LEFT");
-        ImGui::Text("Draw lines"); ImGui::SameLine(); ImGui::TextDisabled("[ALT] + Mouse RIGHT");
-        ImGui::Text("Set width"); ImGui::SameLine(); ImGui::TextDisabled("[ALT] + Mouse WHEEL");
-        ImGui::Text("Clear all"); ImGui::SameLine(); ImGui::TextDisabled("[ESC]");
-        ImGui::Text("Clear last"); ImGui::SameLine(); ImGui::TextDisabled("[CTRL + Z]");
+        {
+            constexpr int w1 = 150;
+            constexpr int w2 = 300;
+
+            ImGui::TextDisabled("[Key 1] or [Key 2]"); 
+            ImGui::SameLine(w1); ImGui::Text("Mode 1");
+            ImGui::SameLine(w2); ImGui::Text("Mode 2");
+
+            ImGui::TextDisabled("Mouse LEFT");
+            ImGui::SameLine(w1); ImGui::Text("Move video");
+            ImGui::SameLine(w2); ImGui::Text("Draw points");
+
+            ImGui::TextDisabled("Mouse RIGHT");
+            ImGui::SameLine(w1); ImGui::TextDisabled("---");
+            ImGui::SameLine(w2); ImGui::Text("Draw lines");
+
+            ImGui::TextDisabled("Mouse WHEEL");
+            ImGui::SameLine(w1); ImGui::Text("Zoom video");
+            ImGui::SameLine(w2); ImGui::Text("Line width");
+
+            ImGui::TextDisabled("[ALT] + Mouse LEFT");
+            ImGui::SameLine(w1); ImGui::Text("Draw points");
+            ImGui::SameLine(w2); ImGui::Text("Move video");
+
+            ImGui::TextDisabled("[ALT] + Mouse RIGHT");
+            ImGui::SameLine(w1); ImGui::Text("Draw lines");
+            ImGui::SameLine(w2); ImGui::TextDisabled("---");
+
+            ImGui::TextDisabled("[ALT] + Mouse WHEEL");
+            ImGui::SameLine(w1); ImGui::Text("Line width");
+            ImGui::SameLine(w2); ImGui::Text("Zoom video");
+
+        }
     }
     ImGui::End();
 }
