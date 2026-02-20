@@ -123,7 +123,7 @@ namespace video {
 
         CircleBuffer<RGBFrame*, capacity, nullptr> items;
         size_t selected = 0;
-        int8_t loadDir = 1;
+        int8_t loadDir = 1; //todo: need this?
 
         const RGBFrame* curr();
         const RGBFrame* next();
@@ -147,6 +147,7 @@ namespace video {
         bool paused = true;     // user toggle pause by clicking [SPACE] key or 'Pause' button
         bool update = true;     // flag for update frame when paused or manual seek
         float progress = 0.f;   // [0; 100]
+        int64_t seconds = 0;
         int64_t framePts = 0;   // last seen frame pts 
         int64_t frameDur = 0;   // last seen frame duration
     };

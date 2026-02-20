@@ -133,25 +133,25 @@ public:
 	}
 
 	struct iterator {
-		const CircleBuffer& parent;
+		const CircleBuffer& buffer;
 		size_t index = 0;
 		iterator& operator++() {
 			index++;
 			return *this;
 		}
 		const T& operator*() const { 
-			return parent[index];
+			return buffer[index];
 		}
 		friend bool operator!=(const iterator& left, const iterator& right) {
 			return left.index != right.index;
 		}
 	};
 
-	iterator begin() {
+	iterator begin() const {
 		return iterator{ *this, 0 };
 	}
 
-	iterator end() {
+	iterator end() const {
 		return iterator{ *this, count };
 	}
 

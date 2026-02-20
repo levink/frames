@@ -546,21 +546,39 @@ namespace video {
         return nullptr;
     }
     void FrameQueue::print() const {
-        /*std::cout << "[";
-        for (size_t i = 0; i < items.size(); i++) {
-            auto elem = items[i];
-            char mark = (i == selected) ? '=' : ' ';
-            std::cout << elem->pts << mark << " ";
+        /*
+        using std::cout;
+        
+        if (items.empty()) {
+            cout << "[]";
         }
-        std::cout << "] ";
+        else if (items.size() == 1) {
+            cout << "[" << items[0] << "]";
+        } 
+        else {
+            int64_t ptsMin = items[0]->pts;
+            int64_t ptsMax = items[0]->pts;
+            for (RGBFrame* elem : items) {
+                const auto& pts = elem->pts;
+                if (pts < ptsMin) {
+                    ptsMin = pts;
+                }
+                if (pts > ptsMax) {
+                    ptsMax = pts;
+                }
+            }
+            cout << "[" << ptsMin << ".." << ptsMax << "]";
+        }
+        
+        cout << " index=" << selected << "/" << items.size();
 
         if (0 <= selected && selected < items.size()) {
-            std::cout << "pts=" << items[selected]->pts;
+            std::cout << " pts=" << items[selected]->pts;
+        } else {
+            std::cout << " pts=???";
         }
-        else {
-            std::cout << "pts=???";
-        }
-        std::cout << std::endl;*/
+        std::cout << std::endl;
+        */
     }
     void FrameQueue::play(FrameLoader& loader) {
         if (loadDir < 0) {
@@ -808,6 +826,14 @@ namespace video {
                     ps.framePts = frame->pts;
                     ps.frameDur = frame->dur;
                     ps.progress = info.calcProgress(frame->pts);
+
+                    int64_t seconds = (info.time_base.num + frame->pts) / info.time_base.den;
+                    if (seconds != ps.seconds)
+                    {
+                        ps.seconds = seconds;
+                        //std::cout << "seconds: " << seconds << std::endl;
+                    }
+
                     return true;
                 }
                 if (eof()) {
@@ -825,6 +851,14 @@ namespace video {
                 ps.framePts = frame->pts;
                 ps.frameDur = frame->dur;
                 ps.progress = info.calcProgress(frame->pts);
+                
+                int64_t seconds = (info.time_base.num + frame->pts) / info.time_base.den;
+                if (seconds != ps.seconds)
+                {
+                    ps.seconds = seconds;
+                    //std::cout << "seconds: " << seconds << std::endl;
+                }
+
                 return true;
             }
             if (eof()) {

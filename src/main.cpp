@@ -118,6 +118,7 @@ namespace ui {
 
     struct Slider {
         float progress = 0;
+        char seconds[6] = {0};  // mm:ss 
         bool hold = false;
     private:
         float lastProgress = 0;
@@ -217,8 +218,12 @@ namespace ui {
         void setVideo(bool value) {
             hasVideo = value;
         }
-        void setProgress(float progress) {
+        void setProgress(float progress, int64_t seconds) {
             slider.progress = progress;
+            
+            int mm = (seconds % 3600) / 60;
+            int ss = (seconds % 60);
+            snprintf(slider.seconds, sizeof(slider.seconds), "%02d:%02d", mm, ss);
         }
         void setTextureID(const ImTextureID& value) {
             textureId = value;
@@ -289,7 +294,7 @@ namespace ui {
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
                 ImGui::BeginChild("slider", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
-                ImGui::SliderFloat("##slider", &slider.progress, 0.0f, 100.0f, "", ImGuiSliderFlags_AlwaysClamp);
+                ImGui::SliderFloat("##slider", &slider.progress, 0.0f, 100.0f, slider.seconds, ImGuiSliderFlags_AlwaysClamp);
                 bool changedByUser = slider.update(ImGui::IsItemActive());
                 if (changedByUser && slideFn) {
                     slideFn(slider.progress, slider.hold);
@@ -1153,7 +1158,7 @@ void ui::FrameController::update(const time_point& now) {
         if (rgb) {
             frameRender.updateTexture(rgb->width, rgb->height, rgb->pixels);
         }
-        frameWindow.setProgress(player.ps.progress);
+        frameWindow.setProgress(player.ps.progress, player.ps.seconds);
 
         //todo: do this after two updates
         if (player.eof() && ui::splitMode != SplitMode::Single && ui::seekTarget == nullptr) {
